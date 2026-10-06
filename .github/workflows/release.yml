@@ -54,7 +54,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Manifest Signing Dependency
-        run: python3 -m pip install --quiet --disable-pip-version-check cryptography
+        run: |
+          python3 -m venv "$RUNNER_TEMP/shb-venv"
+          "$RUNNER_TEMP/shb-venv/bin/python" -m pip install --quiet --disable-pip-version-check cryptography
 
       - name: Generate and Upload Release Manifest (manifest.json)
         env:
@@ -62,7 +64,7 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
         run: |
-          python3 -c "
+          "$RUNNER_TEMP/shb-venv/bin/python" -c "
           import json, os, urllib.request, hashlib
 
           tag = os.environ['TAG_NAME']
