@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,7 +14,11 @@ import (
 )
 
 // DefaultReleaseBaseURL is the official distribution endpoint for SecretHarbor releases.
-const DefaultReleaseBaseURL = "https://releases.secretharbor.dev"
+// GitHub Releases is the canonical source; set SECRETHARBOR_UPDATE_URL to use a mirror.
+const DefaultReleaseBaseURL = "https://github.com/logn10/SecretHarbor/releases"
+
+// DefaultGitHubRepo is the canonical GitHub repository for release lookups.
+const DefaultGitHubRepo = "logn10/SecretHarbor"
 
 // ArtifactInfo details a platform-specific binary or archive release artifact.
 type ArtifactInfo struct {
@@ -76,6 +81,24 @@ func formatNetworkError(endpoint string, err error) error {
 	return fmt.Errorf("network error contacting update server at %s: %w", endpoint, err)
 }
 
+// releaseManifestURL builds the manifest location for GitHub Releases or a self-hosted mirror.
+func releaseManifestURL(baseURL, targetVersion string) string {
+	trimmed := strings.TrimRight(baseURL, "/")
+	version := strings.TrimPrefix(targetVersion, "v")
+
+	if strings.HasPrefix(trimmed, "https://github.com/") && strings.HasSuffix(trimmed, "/releases") {
+		if version == "" {
+			return trimmed + "/latest/download/manifest.json"
+		}
+		return fmt.Sprintf("%s/download/v%s/manifest.json", trimmed, version)
+	}
+
+	if version == "" {
+		return trimmed + "/manifest.json"
+	}
+	return fmt.Sprintf("%s/v%s/manifest.json", trimmed, version)
+}
+
 // FetchReleaseManifest downloads and decodes the release manifest from the release server.
 func FetchReleaseManifest(customURL string) (*ReleaseManifest, error) {
 	return FetchReleaseManifestForVersion(customURL, "")
@@ -95,18 +118,14 @@ func FetchReleaseManifestForVersion(customURL string, targetVersion string) (*Re
 		return nil, err
 	}
 
-	manifestPath := "/manifest.json"
-	if targetVersion != "" {
-		manifestPath = fmt.Sprintf("/v%s/manifest.json", strings.TrimPrefix(targetVersion, "v"))
-	}
-	manifestURL := strings.TrimRight(baseURL, "/") + manifestPath
+	manifestURL := releaseManifestURL(baseURL, targetVersion)
 	client := HTTPClient
 
 	req, err := http.NewRequest(http.MethodGet, manifestURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create manifest request: %w", err)
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("SecretHarbor-Updater/%s (%s; %s)", "0.4.0-prod", runtime.GOOS, runtime.GOARCH))
+	req.Header.Set("User-Agent", fmt.Sprintf("SecretHarbor-Updater/%s (%s; %s)", "0.1.0", runtime.GOOS, runtime.GOARCH))
 
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
@@ -155,16 +174,16 @@ type gitHubReleaseResponse struct {
 }
 
 func fetchGitHubReleaseManifest(targetVersion string) (*ReleaseManifest, error) {
-	ghURL := "https://api.github.com/repos/secretharbor/secretharbor/releases/latest"
+	ghURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", DefaultGitHubRepo)
 	if targetVersion != "" {
-		ghURL = fmt.Sprintf("https://api.github.com/repos/secretharbor/secretharbor/releases/tags/v%s", strings.TrimPrefix(targetVersion, "v"))
+		ghURL = fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/v%s", DefaultGitHubRepo, strings.TrimPrefix(targetVersion, "v"))
 	}
 
 	req, err := http.NewRequest(http.MethodGet, ghURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "SecretHarbor-Updater/0.4.0-prod")
+	req.Header.Set("User-Agent", "SecretHarbor-Updater/0.1.0")
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 	resp, err := HTTPClient.Do(req)
@@ -192,6 +211,18 @@ func fetchGitHubReleaseManifest(targetVersion string) (*ReleaseManifest, error) 
 		manifest.PublishedAt = parsedTime
 	}
 
+	// Attach published SHA-256 hashes from the release checksums.txt asset so the
+	// API fallback is still cryptographically verifiable.
+	hashes := make(map[string]string)
+	for _, asset := range ghResp.Assets {
+		if asset.Name == "checksums.txt" {
+			if parsed, err := fetchChecksums(asset.BrowserDownloadURL); err == nil {
+				hashes = parsed
+			}
+			break
+		}
+	}
+
 	for _, asset := range ghResp.Assets {
 		for _, osName := range []string{"darwin", "linux", "windows"} {
 			for _, arch := range []string{"arm64", "amd64"} {
@@ -200,6 +231,7 @@ func fetchGitHubReleaseManifest(targetVersion string) (*ReleaseManifest, error) 
 					manifest.Artifacts[key] = ArtifactInfo{
 						URL:      asset.BrowserDownloadURL,
 						Filename: asset.Name,
+						SHA256:   hashes[asset.Name],
 						Size:     asset.Size,
 					}
 				}
@@ -208,6 +240,31 @@ func fetchGitHubReleaseManifest(targetVersion string) (*ReleaseManifest, error) 
 	}
 
 	return manifest, nil
+}
+
+// fetchChecksums downloads a goreleaser checksums.txt file into filename -> sha256.
+func fetchChecksums(rawURL string) (map[string]string, error) {
+	resp, err := HTTPClient.Get(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("checksums request failed (HTTP %d)", resp.StatusCode)
+	}
+
+	out := make(map[string]string)
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) == 2 {
+			out[fields[1]] = fields[0]
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // CompareVersions compares two SemVer strings (e.g. "0.4.0-prod" vs "0.4.0").

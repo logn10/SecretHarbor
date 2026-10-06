@@ -1,7 +1,7 @@
 package docs
 
 // Version is the current SecretHarbor version for documentation generation.
-const Version = "0.4.0-prod"
+const Version = "0.1.0"
 
 // FlagDef details a command flag.
 type FlagDef struct {
@@ -393,7 +393,7 @@ var CommandRegistry = map[string]*CommandDef{
 		Examples: []string{
 			"shb update",
 			"shb update --check",
-			"shb update --version 0.4.0",
+			"shb update --version 0.1.0",
 			"shb update --dry-run",
 		},
 		Flags: []FlagDef{

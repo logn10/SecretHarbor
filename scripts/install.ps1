@@ -1,9 +1,9 @@
 # SecretHarbor Canonical Installer for Windows (PowerShell)
-# Website: https://secretharbor.dev
-# Documentation: https://secretharbor.dev/docs/installation
+# Repository: https://github.com/logn10/SecretHarbor
+# Releases: https://github.com/logn10/SecretHarbor/releases
 #
 # Usage:
-#   irm https://secretharbor.dev/install.ps1 | iex
+#   irm https://github.com/logn10/SecretHarbor/releases/latest/download/install.ps1 | iex
 #   or:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
 
@@ -44,7 +44,7 @@ switch -Regex ($arch) {
     "AMD64|x86_64" { $platformArch = "amd64" }
     "ARM64"        { $platformArch = "arm64" }
     default {
-        Write-ErrorMsg "Unsupported processor architecture: $arch. Please visit https://secretharbor.dev/releases for manual builds."
+        Write-ErrorMsg "Unsupported processor architecture: $arch. Please visit https://github.com/logn10/SecretHarbor/releases for manual builds."
     }
 }
 
@@ -67,7 +67,9 @@ if (-not (Test-Path $InstallDir)) {
 }
 
 # 3. Base URLs and Version Discovery
-$baseUrl = if ($env:SECRETHARBOR_UPDATE_URL) { $env:SECRETHARBOR_UPDATE_URL } else { "https://releases.secretharbor.dev" }
+$ghRepo = if ($env:SECRETHARBOR_GITHUB_REPO) { $env:SECRETHARBOR_GITHUB_REPO } else { "logn10/SecretHarbor" }
+$ghReleases = "https://github.com/$ghRepo/releases"
+$customBase = if ($env:SECRETHARBOR_UPDATE_URL) { $env:SECRETHARBOR_UPDATE_URL.TrimEnd("/") } else { "" }
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("shb-install-" + [System.Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
@@ -75,48 +77,34 @@ try {
     # Resolve target version cleanly without bash syntax
     $targetVer = if ($Version) { $Version.TrimStart("v") } else { "" }
     if (-not $targetVer) {
-        $manifestUrl = "$baseUrl/manifest.json"
+        $manifestUrl = if ($customBase) { "$customBase/manifest.json" } else { "$ghReleases/latest/download/manifest.json" }
         try {
-            $manifestJson = Invoke-RestMethod -Uri $manifestUrl -UseBasicParsing -TimeoutSec 10 -ErrorAction SilentlyContinue
+            $manifestJson = Invoke-RestMethod -Uri $manifestUrl -UseBasicParsing -TimeoutSec 15 -ErrorAction SilentlyContinue
             if ($manifestJson -and $manifestJson.version) {
                 $targetVer = $manifestJson.version.TrimStart("v")
             }
         } catch {
-            # Fall back to default version
+            # Version stays empty; handled below.
         }
     }
 
     if (-not $targetVer) {
-        $targetVer = "0.4.0"
+        Write-ErrorMsg "Could not determine the latest release version. Pass -Version <version> explicitly (see $ghReleases)."
     }
 
+    $releaseBase = if ($customBase) { "$customBase/v$targetVer" } else { "$ghReleases/download/v$targetVer" }
     $artifactName = "secretharbor_${targetVer}_windows_${platformArch}.zip"
-    $artifactUrl = "$baseUrl/v$targetVer/$artifactName"
-    $ghFallback = "https://github.com/secretharbor/secretharbor/releases/download/v$targetVer/$artifactName"
+    $artifactUrl = "$releaseBase/$artifactName"
     $downloadFile = Join-Path $tempDir $artifactName
 
     Write-Info "Downloading SecretHarbor release for $platform (v$targetVer)..."
-    try {
-        Invoke-WebRequest -Uri $artifactUrl -OutFile $downloadFile -UseBasicParsing
-    } catch {
-        Write-Info "Central endpoint unreachable, trying GitHub releases..."
-        Invoke-WebRequest -Uri $ghFallback -OutFile $downloadFile -UseBasicParsing
-    }
+    Invoke-WebRequest -Uri $artifactUrl -OutFile $downloadFile -UseBasicParsing
 
     # 4. Download and Compare Checksum against checksums.txt
-    $checksumsUrl = "$baseUrl/v$targetVer/checksums.txt"
-    $ghChecksums = "https://github.com/secretharbor/secretharbor/releases/download/v$targetVer/checksums.txt"
+    $checksumsUrl = "$releaseBase/checksums.txt"
     $checksumsFile = Join-Path $tempDir "checksums.txt"
 
-    try {
-        Invoke-WebRequest -Uri $checksumsUrl -OutFile $checksumsFile -UseBasicParsing -ErrorAction SilentlyContinue
-    } catch {
-        try {
-            Invoke-WebRequest -Uri $ghChecksums -OutFile $checksumsFile -UseBasicParsing -ErrorAction SilentlyContinue
-        } catch {
-            Write-WarningMsg "Could not download checksums.txt"
-        }
-    }
+    Invoke-WebRequest -Uri $checksumsUrl -OutFile $checksumsFile -UseBasicParsing -ErrorAction SilentlyContinue
 
     $computedHash = (Get-FileHash -Path $downloadFile -Algorithm SHA256).Hash.ToLower()
 

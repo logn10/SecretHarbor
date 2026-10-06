@@ -3,8 +3,8 @@
 > **Host-level security boundary for AI coding agents and agentic development environments.**  
 > *"Do not lock the file. Lock the agent's capability to access the file."*
 
-[![CI](https://github.com/secretharbor/secretharbor/actions/workflows/ci.yml/badge.svg)](https://github.com/secretharbor/secretharbor/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/secretharbor/secretharbor?include_prereleases)](https://github.com/secretharbor/secretharbor/releases)
+[![CI](https://github.com/logn10/SecretHarbor/actions/workflows/ci.yml/badge.svg)](https://github.com/logn10/SecretHarbor/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/logn10/SecretHarbor?include_prereleases)](https://github.com/logn10/SecretHarbor/releases)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Security Policy](https://img.shields.io/badge/security-policy-green.svg)](SECURITY.md)
 [![Go Version](https://img.shields.io/badge/Go-1.22%2B-00ADD8.svg?logo=go)](go.mod)
@@ -84,24 +84,23 @@ SecretHarbor strictly distinguishes **configuration intent** from **actual activ
 
 #### A. One-Line POSIX Installer (macOS & Linux)
 ```bash
-curl -fsSL https://secretharbor.dev/install.sh | sh
+curl -fsSL https://github.com/logn10/SecretHarbor/releases/latest/download/install.sh | sh
 ```
-* Fully POSIX compliant (`/bin/sh`).
-* Automatically verifies SHA-256 checksums from `checksums.txt` and validates against signed release metadata.
-* Installs `shb`, `secretharbor` binary alias, and Unix manual pages to `man1/`.
+Pin a specific release with `sh -s -- --version 0.1.0`.
 
-#### B. One-Line PowerShell Installer (Windows)
+* Fully POSIX compliant (`/bin/sh`).
+* Verifies the SHA-256 checksum from the release `checksums.txt` before installing (fail closed).
+* Installs `shb`, the `secretharbor` alias, and Unix manual pages.
+
+#### B. One-Line PowerShell Installer (Windows, preview)
 ```powershell
-irm https://secretharbor.dev/install.ps1 | iex
+irm https://github.com/logn10/SecretHarbor/releases/latest/download/install.ps1 | iex
 ```
 * Verifies SHA-256 hash against `checksums.txt` via `Get-FileHash`.
 * Installs to `$env:LOCALAPPDATA\Programs\SecretHarbor` and updates user `PATH`.
 
 #### C. Homebrew (macOS & Linux)
-```bash
-brew tap secretharbor/tap
-brew install secretharbor
-```
+A Homebrew tap is planned (see Roadmap). Until then, use the one-line installer above.
 
 #### D. WinGet (Windows)
 WinGet packaging is generated from published release artifacts. Until the first
@@ -110,8 +109,8 @@ from source.
 
 #### E. From Source (Go 1.22+)
 ```bash
-git clone https://github.com/secretharbor/secretharbor.git
-cd secretharbor
+git clone https://github.com/logn10/SecretHarbor.git
+cd SecretHarbor
 make build
 make man
 sudo make install
@@ -287,6 +286,19 @@ All self-updates and release artifacts are cryptographically signed:
 * **Universal Untrusted Fallback:** Any command or unknown binary executed via `shb run` defaults to `Runtime: process, Integration: unknown` under full standard sandbox protections.
 
 ---
+
+## Roadmap & Known Limitations
+
+These are known gaps and planned work. Until an item is implemented, the limitation applies as described.
+
+- **Git history secrets (high priority).** Secrets that were ever committed to git remain readable inside the sandbox via `git show`, `git log -p`, or `git archive`, because `.git` objects must stay readable for git to function and are outside the file-level deny rules. Planned: detect ever-committed secret paths in `shb doctor` / `shb status` and report a failure with remediation guidance (rotate the credential and purge history with `git filter-repo`/BFG), plus documentation.
+- **Agent-run tests use synthetic values.** Tests executed *by the agent* run inside the boundary and therefore see fakes. Tests run by the human or CI outside the sandbox always see real values. Planned: capability-brokered test credentials so agent-run integration tests can reach approved services without exposing the real secret.
+- **Windows isolation (preview).** Windows builds and runs with environment sanitization and process isolation, but filesystem virtualization and AppContainer/Job Object hardening are not yet at parity with macOS/Linux.
+- **Linux runtime validation.** The mount-namespace + Landlock implementation is complete and cross-compiled but has not been exercised across the full range of supported kernels in CI. Planned: kernel-matrix integration tests (including kernels where Landlock is unavailable) and kernel-enforced network policy parity with macOS.
+- **Network policy nuance.** `restricted` and `deny` modes are kernel-enforced on macOS; `allow` with an explicit `deny` list remains proxy-based and depends on clients honoring the proxy (reported honestly by `shb doctor` and `shb status`).
+- **Content-based secret detection.** Detection is filename/path-based; a secret copied to a non-secret filename (e.g. via a pre-existing hard link) is not virtualized. Planned: entropy/content scanning as a supplementary signal.
+- **Release & packaging.** One-line installers (`install.sh` for macOS/Linux, `install.ps1` for Windows) and `shb update` are served from GitHub Releases with SHA-256 verification. Still pending: release signing keys (Ed25519) for update verification, macOS notarization/Developer ID signing, and package-manager publishing (Homebrew tap, WinGet).
+- **IDE/desktop integrations.** VS Code/Cursor extension surfaces for approvals, audit, and secret management are planned; the CLI and OS boundary remain the source of truth.
 
 ## License
 

@@ -6,8 +6,8 @@ SecretHarbor is a host-level security boundary designed to protect credentials a
 
 | Version | Supported | Status |
 |---|---|---|
-| `0.4.x` | :white_check_mark: | Active production release branch |
-| `< 0.4.0` | :x: | End of Life / Unsupported |
+| `0.1.x` | :white_check_mark: | Active release branch |
+| `< 0.1.0` | :x: | Unsupported |
 
 ## Threat Model and Security Guarantees
 
@@ -29,8 +29,8 @@ If you discover a security vulnerability or potential sandbox bypass in SecretHa
 > **Please DO NOT file a public GitHub issue.**
 
 Instead, report the vulnerability through coordinated disclosure:
-1. **Email:** Send details to [security@secretharbor.dev](mailto:security@secretharbor.dev).
-2. **GitHub Security Advisories:** Submit a private vulnerability report via [GitHub Security Advisory](https://github.com/secretharbor/secretharbor/security/advisories/new).
+1. **GitHub Security Advisories:** Submit a private vulnerability report (preferred).
+2. **Email:** If you cannot use GitHub, open a minimal issue asking for a private contact channel (do not include exploit details).
 
 ### What to Include in Your Report
 To help us triage and resolve the issue quickly, please include:

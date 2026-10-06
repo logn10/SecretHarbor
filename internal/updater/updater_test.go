@@ -231,7 +231,7 @@ func TestFetchManifestGitHubFallback(t *testing.T) {
 		}{
 			{
 				Name:               "secretharbor_" + platformKey + ".tar.gz",
-				BrowserDownloadURL: "https://github.com/secretharbor/secretharbor/releases/download/v0.9.0/asset.tar.gz",
+				BrowserDownloadURL: "https://github.com/logn10/SecretHarbor/releases/download/v0.9.0/asset.tar.gz",
 				Size:               1234567,
 			},
 		},
@@ -241,7 +241,7 @@ func TestFetchManifestGitHubFallback(t *testing.T) {
 	mux.HandleFunc("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not found on CDN", http.StatusNotFound)
 	})
-	mux.HandleFunc("/repos/secretharbor/secretharbor/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/repos/logn10/SecretHarbor/releases/latest", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(mockGHResp)
 	})

@@ -31,7 +31,7 @@ import (
 	"github.com/secretharbor/secretharbor/internal/vault"
 )
 
-var Version = "0.4.0-prod"
+var Version = "0.1.0"
 
 // ProcessExitError preserves the exact child process exit code (BUG-017).
 type ProcessExitError struct {
@@ -197,7 +197,7 @@ func RunInit(progName string, args []string) error {
 	createdConfig := false
 	if _, err := os.Stat(targetFile); os.IsNotExist(err) || force {
 		content := `# SecretHarbor Configuration File (v1)
-# Documentation: https://secretharbor.dev
+# Documentation: https://github.com/logn10/SecretHarbor
 
 version: 1
 

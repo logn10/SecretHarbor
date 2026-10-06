@@ -5,11 +5,11 @@
 # Documentation: https://docs.brew.sh/Formula-Cookbook
 class Secretharbor < Formula
   desc "Host-level security boundary and secret virtualization layer for AI agents"
-  homepage "https://secretharbor.dev"
-  url "https://github.com/secretharbor/secretharbor/archive/refs/tags/v0.4.0-prod.tar.gz"
-  version "0.4.0-prod"
+  homepage "https://github.com/logn10/SecretHarbor"
+  url "https://github.com/logn10/SecretHarbor/archive/refs/tags/v0.1.0.tar.gz"
+  version "0.1.0"
   license "Apache-2.0"
-  head "https://github.com/secretharbor/secretharbor.git", branch: "main"
+  head "https://github.com/logn10/SecretHarbor.git", branch: "main"
 
   depends_on "go" => :build
 

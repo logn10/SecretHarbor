@@ -1,12 +1,11 @@
 #!/bin/sh
 # SecretHarbor Canonical Installer for macOS and Linux
-# Website: https://secretharbor.dev
-# Documentation: https://secretharbor.dev/docs/installation
+# Repository: https://github.com/logn10/SecretHarbor
 #
 # Usage:
-#   curl -fsSL https://secretharbor.dev/install.sh | sh
-#   or with custom options:
-#   curl -fsSL https://secretharbor.dev/install.sh | sh -s -- --version 0.4.0
+#   curl -fsSL https://github.com/logn10/SecretHarbor/releases/latest/download/install.sh | sh
+#   or with a pinned version:
+#   curl -fsSL https://github.com/logn10/SecretHarbor/releases/download/v0.1.0/install.sh | sh -s -- --version 0.1.0
 
 set -eu
 
@@ -33,6 +32,9 @@ error() {
     exit 1
 }
 
+GITHUB_REPO="${SECRETHARBOR_GITHUB_REPO:-logn10/SecretHarbor}"
+GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases"
+
 # 1. Detect Operating System and Architecture
 detect_platform() {
     OS="$(uname -s)"
@@ -40,7 +42,7 @@ detect_platform() {
         Darwin) OS="darwin" ;;
         Linux)  OS="linux" ;;
         *)
-            error "Unsupported operating system: $OS. Please install manually from https://secretharbor.dev/releases"
+            error "Unsupported operating system: $OS. Download a release manually from ${GITHUB_RELEASES}"
             ;;
     esac
 
@@ -49,7 +51,7 @@ detect_platform() {
         x86_64|amd64)   ARCH="amd64" ;;
         arm64|aarch64)  ARCH="arm64" ;;
         *)
-            error "Unsupported CPU architecture: $ARCH. Please install manually from https://secretharbor.dev/releases"
+            error "Unsupported CPU architecture: $ARCH. Download a release manually from ${GITHUB_RELEASES}"
             ;;
     esac
 
@@ -59,15 +61,11 @@ detect_platform() {
 # 2. Parse Arguments
 TARGET_VERSION=""
 DRY_RUN=0
-NON_INTERACTIVE=0
-
-if [ "${CI:-0}" = "1" ] || [ ! -t 0 ]; then
-    NON_INTERACTIVE=1
-fi
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --version|-v)
+            [ $# -ge 2 ] || error "Missing value for --version"
             TARGET_VERSION="$2"
             shift 2
             ;;
@@ -76,7 +74,6 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         -y|--yes)
-            NON_INTERACTIVE=1
             shift
             ;;
         *)
@@ -99,18 +96,7 @@ if [ -z "$INSTALL_DIR" ]; then
     fi
 fi
 
-mkdir -p "$INSTALL_DIR" || error "Failed to create installation directory: $INSTALL_DIR"
-
-# 4. Fetch Release Metadata & Determine Version
-BASE_URL="${SECRETHARBOR_UPDATE_URL:-https://releases.secretharbor.dev}"
-MANIFEST_URL="${BASE_URL}/manifest.json"
-
-TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'shb-install')"
-cleanup() {
-    rm -rf "$TMP_DIR"
-}
-trap cleanup EXIT INT TERM
-
+# 4. Downloader
 if command -v curl >/dev/null 2>&1; then
     FETCH_CMD="curl -fsSL"
 elif command -v wget >/dev/null 2>&1; then
@@ -119,106 +105,93 @@ else
     error "Neither curl nor wget was found on your system. Please install curl or wget."
 fi
 
-VERSION="$TARGET_VERSION"
+TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t 'shb-install')"
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT INT TERM
+
+# 5. Resolve the release endpoint and version.
+#    - SECRETHARBOR_UPDATE_URL set: self-hosted/mirror layout (<base>/manifest.json,
+#      <base>/v<version>/<artifact>).
+#    - Otherwise: GitHub Releases for GITHUB_REPO. Without --version, the version is
+#      discovered from the manifest.json asset attached to the latest release.
+CUSTOM_BASE="${SECRETHARBOR_UPDATE_URL:-}"
+VERSION="$(echo "${TARGET_VERSION}" | sed 's/^v//')"
 MANIFEST_FILE="$TMP_DIR/manifest.json"
 
-if [ -z "$VERSION" ]; then
-    info "Fetching release metadata from ${MANIFEST_URL}..."
-    if $FETCH_CMD "$MANIFEST_URL" > "$MANIFEST_FILE" 2>/dev/null; then
-        VERSION="$(grep -o '"version": "[^"]*"' "$MANIFEST_FILE" 2>/dev/null | head -n 1 | cut -d'"' -f4 || true)"
+if [ -n "$CUSTOM_BASE" ]; then
+    BASE_URL="${CUSTOM_BASE%/}"
+    MANIFEST_URL="${BASE_URL}/manifest.json"
+    if [ -z "$VERSION" ]; then
+        info "Fetching release metadata from ${MANIFEST_URL}..."
+        if $FETCH_CMD "$MANIFEST_URL" > "$MANIFEST_FILE" 2>/dev/null; then
+            VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$MANIFEST_FILE" | head -n 1)"
+            VERSION="$(echo "$VERSION" | sed 's/^v//')"
+        fi
+        [ -n "$VERSION" ] || error "Could not determine the latest version from ${MANIFEST_URL}. Pass --version <version> explicitly."
+    fi
+    RELEASE_BASE="${BASE_URL}/v${VERSION}"
+else
+    if [ -z "$VERSION" ]; then
+        MANIFEST_URL="${GITHUB_RELEASES}/latest/download/manifest.json"
+        info "Fetching release metadata from ${MANIFEST_URL}..."
+        if $FETCH_CMD "$MANIFEST_URL" > "$MANIFEST_FILE" 2>/dev/null; then
+            VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$MANIFEST_FILE" | head -n 1)"
+            VERSION="$(echo "$VERSION" | sed 's/^v//')"
+        fi
+        [ -n "$VERSION" ] || error "Could not determine the latest release version. Pass --version <version> explicitly (see ${GITHUB_RELEASES})."
+        RELEASE_BASE="${GITHUB_RELEASES}/download/v${VERSION}"
+    else
+        RELEASE_BASE="${GITHUB_RELEASES}/download/v${VERSION}"
     fi
 fi
 
-# Fallback default version if manifest unreachable and version unspecified
-if [ -z "$VERSION" ]; then
-    VERSION="0.4.0"
-fi
-# Strip optional leading 'v'
-VERSION="$(echo "$VERSION" | sed 's/^v//')"
-
-# 5. Determine GoReleaser Artifact Name and URLs
 ARTIFACT_NAME="secretharbor_${VERSION}_${OS}_${ARCH}.tar.gz"
-PRIMARY_URL="${BASE_URL}/v${VERSION}/${ARTIFACT_NAME}"
-GH_FALLBACK="https://github.com/secretharbor/secretharbor/releases/download/v${VERSION}/${ARTIFACT_NAME}"
+ARTIFACT_URL="${RELEASE_BASE}/${ARTIFACT_NAME}"
+CHECKSUMS_URL="${RELEASE_BASE}/checksums.txt"
 DOWNLOAD_FILE="$TMP_DIR/${ARTIFACT_NAME}"
 
 info "Release artifact: ${ARTIFACT_NAME} (v${VERSION})"
+info "Download URL: ${ARTIFACT_URL}"
 
 if [ "$DRY_RUN" = "1" ]; then
-    info "Dry run requested. Skipping download and execution."
-    success "Platform check passed: ${PLATFORM} (version ${VERSION})"
+    success "Dry run complete: platform ${PLATFORM}, version ${VERSION}"
     exit 0
 fi
 
-# Checksum verification helper
-verify_checksum() {
-    FILE="$1"
-    EXPECTED_SHA="$2"
+mkdir -p "$INSTALL_DIR" || error "Failed to create installation directory: $INSTALL_DIR"
 
-    if [ -z "$EXPECTED_SHA" ]; then
-        error "No cryptographic checksum provided for verification. Aborting installation."
-    fi
-
-    if command -v sha256sum >/dev/null 2>&1; then
-        ACTUAL_SHA="$(sha256sum "$FILE" | awk '{print $1}')"
-    elif command -v shasum >/dev/null 2>&1; then
-        ACTUAL_SHA="$(shasum -a 256 "$FILE" | awk '{print $1}')"
-    elif command -v openssl >/dev/null 2>&1; then
-        ACTUAL_SHA="$(openssl dgst -sha256 "$FILE" | awk '{print $NF}')"
-    else
-        error "No SHA-256 utility (sha256sum, shasum, or openssl) found. Cannot verify binary integrity."
-    fi
-
-    if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
-        error "Cryptographic checksum mismatch! Expected: ${EXPECTED_SHA}, Got: ${ACTUAL_SHA}"
-    fi
-
-    success "Cryptographic checksum verified (SHA-256: ${ACTUAL_SHA})"
-}
-
-# 6. Fetch Checksum and Download Artifact
+# 6. Fetch checksums and verify the archive (fail closed).
 CHECKSUMS_FILE="$TMP_DIR/checksums.txt"
-CHECKSUMS_URL="${BASE_URL}/v${VERSION}/checksums.txt"
-GH_CHECKSUMS="https://github.com/secretharbor/secretharbor/releases/download/v${VERSION}/checksums.txt"
+info "Downloading checksums from ${CHECKSUMS_URL}..."
+$FETCH_CMD "$CHECKSUMS_URL" > "$CHECKSUMS_FILE" 2>/dev/null || error "Failed to download checksums from ${CHECKSUMS_URL}. Installation aborted."
 
-info "Downloading checksums..."
-if ! $FETCH_CMD "$CHECKSUMS_URL" > "$CHECKSUMS_FILE" 2>/dev/null; then
-    $FETCH_CMD "$GH_CHECKSUMS" > "$CHECKSUMS_FILE" 2>/dev/null || true
-fi
-
-EXPECTED_SHA=""
-if [ -s "$CHECKSUMS_FILE" ]; then
-    EXPECTED_SHA="$(grep "${ARTIFACT_NAME}" "$CHECKSUMS_FILE" | awk '{print $1}' || true)"
-fi
-
+EXPECTED_SHA="$(awk -v f="$ARTIFACT_NAME" '$2 == f {print $1; exit}' "$CHECKSUMS_FILE")"
 if [ -z "$EXPECTED_SHA" ] && [ -s "$MANIFEST_FILE" ]; then
-    EXPECTED_SHA="$(grep -A 5 "\"${PLATFORM}\"" "$MANIFEST_FILE" 2>/dev/null | grep '"sha256"' | head -n 1 | cut -d'"' -f4 || true)"
+    EXPECTED_SHA="$(grep -A 6 "\"${PLATFORM}\"" "$MANIFEST_FILE" 2>/dev/null | sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
 fi
+[ -n "$EXPECTED_SHA" ] || error "No SHA-256 checksum published for ${ARTIFACT_NAME}. Installation aborted."
 
 info "Downloading SecretHarbor release for ${PLATFORM}..."
-if ! $FETCH_CMD "$PRIMARY_URL" > "$DOWNLOAD_FILE" 2>/dev/null; then
-    info "Central endpoint unreachable, falling back to GitHub release asset..."
-    if ! $FETCH_CMD "$GH_FALLBACK" > "$DOWNLOAD_FILE" 2>/dev/null; then
-        error "Failed to download ${ARTIFACT_NAME} from ${PRIMARY_URL} or ${GH_FALLBACK}"
-    fi
-fi
+$FETCH_CMD "$ARTIFACT_URL" > "$DOWNLOAD_FILE" 2>/dev/null || error "Failed to download ${ARTIFACT_URL}"
 
-# Cryptographically verify the downloaded archive
-if [ -n "$EXPECTED_SHA" ]; then
-    verify_checksum "$DOWNLOAD_FILE" "$EXPECTED_SHA"
+if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL_SHA="$(sha256sum "$DOWNLOAD_FILE" | awk '{print $1}')"
+elif command -v shasum >/dev/null 2>&1; then
+    ACTUAL_SHA="$(shasum -a 256 "$DOWNLOAD_FILE" | awk '{print $1}')"
+elif command -v openssl >/dev/null 2>&1; then
+    ACTUAL_SHA="$(openssl dgst -sha256 "$DOWNLOAD_FILE" | awk '{print $NF}')"
 else
-    warn "Checksums file unavailable; attempting to verify from manifest..."
-    if [ -s "$MANIFEST_FILE" ]; then
-        EXPECTED_SHA="$(grep -A 5 "\"${PLATFORM}\"" "$MANIFEST_FILE" 2>/dev/null | grep '"sha256"' | head -n 1 | cut -d'"' -f4 || true)"
-    fi
-    if [ -n "$EXPECTED_SHA" ]; then
-        verify_checksum "$DOWNLOAD_FILE" "$EXPECTED_SHA"
-    else
-        error "Failed to obtain verified SHA-256 checksum for ${ARTIFACT_NAME}. Installation aborted."
-    fi
+    error "No SHA-256 utility (sha256sum, shasum, or openssl) found. Cannot verify binary integrity."
 fi
 
-# 7. Extract and Install Executable Atomically
+if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+    error "Cryptographic checksum mismatch! Expected: ${EXPECTED_SHA}, Got: ${ACTUAL_SHA}"
+fi
+success "Cryptographic checksum verified (SHA-256: ${ACTUAL_SHA})"
+
+# 7. Extract and install executables atomically.
 EXTRACT_DIR="$TMP_DIR/extracted"
 mkdir -p "$EXTRACT_DIR"
 tar -xzf "$DOWNLOAD_FILE" -C "$EXTRACT_DIR" || error "Failed to extract release archive: ${DOWNLOAD_FILE}"
@@ -254,13 +227,9 @@ elif [ -d "$HOME/.local/share/man/man1" ] || mkdir -p "$HOME/.local/share/man/ma
     MAN_DIR="$HOME/.local/share/man/man1"
 fi
 
-if [ -n "$MAN_DIR" ]; then
-    if [ -d "$EXTRACT_DIR/man/man1" ]; then
-        cp -f "$EXTRACT_DIR/man/man1/"*.1 "$MAN_DIR/" 2>/dev/null || true
-        info "Installed man pages to ${MAN_DIR}"
-    elif [ -d "man/man1" ]; then
-        cp -f man/man1/*.1 "$MAN_DIR/" 2>/dev/null || true
-    fi
+if [ -n "$MAN_DIR" ] && [ -d "$EXTRACT_DIR/man/man1" ]; then
+    cp -f "$EXTRACT_DIR/man/man1/"*.1 "$MAN_DIR/" 2>/dev/null || true
+    info "Installed man pages to ${MAN_DIR}"
 fi
 
 # 9. Verification and Post-Install Instructions
@@ -268,7 +237,6 @@ success "SecretHarbor installed successfully!"
 success "Executable: ${TARGET_SHB}"
 success "Alias:      ${TARGET_SECRET_HARBOR}"
 
-# Check if INSTALL_DIR is in PATH
 case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
     *)
@@ -278,7 +246,6 @@ case ":$PATH:" in
         ;;
 esac
 
-# Execute version audit verification
 if command -v "$TARGET_SHB" >/dev/null 2>&1; then
     "$TARGET_SHB" version 2>/dev/null || true
 fi

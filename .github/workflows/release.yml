@@ -52,7 +52,6 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
       - name: Generate and Upload Release Manifest (manifest.json)
         env:
@@ -65,6 +64,7 @@ jobs:
 
           tag = os.environ['TAG_NAME']
           version = tag.lstrip('v')
+          repo = os.environ.get('GITHUB_REPOSITORY', 'logn10/SecretHarbor')
           signing_key_hex = os.environ.get('RELEASE_SIGNING_KEY', '').strip()
           signer = None
           if signing_key_hex:
@@ -104,7 +104,7 @@ jobs:
                           sig = signer.sign(content).hex()
                           manifest['signatures'][f'{os_name}-{arch}'] = sig
                   manifest['artifacts'][f'{os_name}-{arch}'] = {
-                      'url': f'https://github.com/secretharbor/secretharbor/releases/download/{tag}/{fname}',
+                      'url': f'https://github.com/{repo}/releases/download/{tag}/{fname}',
                       'filename': fname,
                       'sha256': sha,
                       'size': os.path.getsize(dist_path)

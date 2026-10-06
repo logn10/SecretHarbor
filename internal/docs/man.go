@@ -89,7 +89,7 @@ func GenerateMainManPage() string {
 	b.WriteString(".SH SEE ALSO\n")
 	b.WriteString("shb-init(1), shb-adopt(1), shb-restart(1), shb-run(1), shb-status(1), shb-sessions(1), shb-stop(1), shb-config(1), shb-policy(1), shb-secret(1), shb-env(1), shb-restore(1), shb-trust(1), shb-doctor(1), shb-guard(1), shb-update(1), shb-version(1), shb-help(1)\n")
 	b.WriteString(".SH WEBSITE\n")
-	b.WriteString("https://secretharbor.dev\n")
+	b.WriteString("https://github.com/logn10/SecretHarbor\n")
 
 	return b.String()
 }
@@ -153,7 +153,7 @@ func GenerateCommandManPage(cmdName string) (string, error) {
 	b.WriteString(".SH SEE ALSO\n")
 	b.WriteString("shb(1)\n")
 	b.WriteString(".SH WEBSITE\n")
-	b.WriteString("https://secretharbor.dev\n")
+	b.WriteString("https://github.com/logn10/SecretHarbor\n")
 
 	return b.String(), nil
 }

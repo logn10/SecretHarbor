@@ -396,7 +396,7 @@ var CommandRegistry = map[string]*CommandDef{
 		Examples: []string{
 			"shb update",
 			"shb update --check",
-			"shb update --version 0.4.0",
+			"shb update --version 0.1.0",
 			"shb update --dry-run",
 		},
 		Flags: []FlagDef{
@@ -484,7 +484,7 @@ func RenderHelp(progName string, cmdName string) string {
 		b.WriteString("\nUse:\n")
 		b.WriteString(fmt.Sprintf("  %s help <command>       Show command-specific documentation\n", progName))
 		b.WriteString("\nWebsite:\n")
-		b.WriteString("  https://secretharbor.dev\n")
+		b.WriteString("  https://github.com/logn10/SecretHarbor\n")
 		return b.String()
 	}
 

@@ -87,7 +87,7 @@ func InstallShims(shimsDir string, detected []*DetectedAgent) (int, error) {
 
 		shimContent := fmt.Sprintf(`#!/bin/sh
 # SecretHarbor automatic guard shim for %s
-# Documentation: https://secretharbor.dev
+# Documentation: https://github.com/logn10/SecretHarbor
 
 if [ -z "$SECRETHARBOR_SANDBOX" ] && [ -z "$SHB_SANDBOX" ]; then
     # Outside sandbox: launch under SecretHarbor security boundary

@@ -70,22 +70,7 @@ changelog:
       - '^test:'
       - '^chore:'
 
-brews:
-  - name: secretharbor
-    repository:
-      owner: secretharbor
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    commit_author:
-      name: secretharbor-bot
-      email: bot@secretharbor.dev
-    homepage: "https://secretharbor.dev"
-    description: "Host-level security boundary for AI agents"
-    license: "Apache-2.0"
-    install: |
-      bin.install "shb"
-      bin.install "secretharbor"
-      man1.install Dir["man/man1/*.1"]
-    test: |
-      system "#{bin}/shb", "version"
-      system "#{bin}/secretharbor", "version"
+release:
+  extra_files:
+    - glob: scripts/install.sh
+    - glob: scripts/install.ps1

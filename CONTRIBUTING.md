@@ -13,7 +13,7 @@ Thank you for your interest in contributing to **SecretHarbor**! SecretHarbor is
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/secretharbor/secretharbor.git
+git clone https://github.com/logn10/SecretHarbor.git
 cd secretharbor
 ```
 
@@ -64,6 +64,29 @@ Verifies that all 14 adversarial attack vectors remain blocked by the security b
 3. Include tests covering new functionality or bug fixes.
 4. Ensure `make man` and `go test ./...` pass cleanly.
 5. Open a Pull Request on GitHub targeting `main`.
+
+## Releasing
+
+Releases are published from Git tags and require no manual artifact uploads:
+
+1. Ensure `main` is green (CI) and the working tree is clean.
+2. Create and push a SemVer tag:
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+3. The `SecretHarbor Release` workflow runs GoReleaser on macOS and publishes, for each platform:
+   - `secretharbor_<version>_<os>_<arch>.tar.gz` (Windows: `.zip`) containing `shb`, `secretharbor`, README, LICENSE, and man pages,
+   - `checksums.txt` (SHA-256),
+   - `manifest.json` (version, artifact URLs, hashes, and Ed25519 signatures when `RELEASE_SIGNING_KEY` is configured),
+   - `install.sh` and `install.ps1` for the one-line installers.
+4. The installer and `shb update` resolve releases from GitHub:
+   - `https://github.com/logn10/SecretHarbor/releases/latest/download/install.sh`
+   - `shb update` fetches `manifest.json` from the same release.
+
+Optional secrets:
+- `RELEASE_SIGNING_KEY` — hex-encoded Ed25519 private key used to sign artifacts. Without it, `manifest.json` is published without signatures and `shb update` refuses the update (fail closed). The corresponding public key must be set in `internal/updater/verifier.go`.
+- `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `KEYCHAIN_PASSWORD` — optional Developer ID signing for macOS binaries.
 
 ## Code of Conduct
 
