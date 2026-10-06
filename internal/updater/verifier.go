@@ -12,7 +12,7 @@ import (
 
 // OfficialReleasePublicKeyHex is the official Ed25519 public signing key for SecretHarbor releases.
 // (Configurable or overridable via SECRETHARBOR_RELEASE_PUBLIC_KEY for custom/enterprise distributions).
-var OfficialReleasePublicKeyHex = "e8ad8a74ba9288a266a4cbe3a044b6482688ac37de8d39b9137d182e25978011"
+var OfficialReleasePublicKeyHex = "27c78ad3da276f4934424f8c328908cf01b453f4e9265a3a1b45403397efc212"
 
 // GetReleasePublicKey returns the active public key, honoring SECRETHARBOR_RELEASE_PUBLIC_KEY if set.
 func GetReleasePublicKey() string {

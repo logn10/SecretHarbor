@@ -47,7 +47,7 @@ builds:
 archives:
   - id: default
     name_template: "secretharbor_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    builds:
+    ids:
       - shb
       - secretharbor
     files:
@@ -56,7 +56,7 @@ archives:
       - man/man1/*
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
 checksum:
   name_template: "checksums.txt"

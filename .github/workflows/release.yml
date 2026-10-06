@@ -48,10 +48,13 @@ jobs:
         uses: goreleaser/goreleaser-action@v5
         with:
           distribution: goreleaser
-          version: latest
+          version: '~> v2'
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Manifest Signing Dependency
+        run: python3 -m pip install --quiet --disable-pip-version-check cryptography
 
       - name: Generate and Upload Release Manifest (manifest.json)
         env:
