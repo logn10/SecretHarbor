@@ -1,0 +1,20 @@
+.TH SHB-ADOPT 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-adopt \- Discover and adopt unprotected running agents
+.SH SYNOPSIS
+\fBshb adopt [--yes]\fR
+.SH DESCRIPTION
+Scans for currently running agent processes that were started before SecretHarbor was active. Because active processes cannot be retroactively sandboxed safely without an established OS security boundary, 'shb adopt' safely terminates them (SIGTERM -> SIGKILL) and restarts them inside a fresh SecretHarbor sandbox.
+.SH OPTIONS
+.TP
+\fB-y\fR, \fB--yes\fR
+Automatically restart unprotected agents without interactive confirmation
+.SH EXAMPLES
+.TP
+$ \fBshb adopt\fR
+.TP
+$ \fBshb adopt --yes\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev

@@ -1,0 +1,27 @@
+.TH SHB-POLICY 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-policy \- Policy validation and resource decision explanation
+.SH SYNOPSIS
+\fBshb policy <check|explain> [resource]\fR
+.SH DESCRIPTION
+Validate policy or debug security decisions for specific files, environment variables, or network domains.
+.SH SUBCOMMANDS
+.TP
+\fBcheck\fR
+Validates the active policy and lists all detected secret files in the workspace.
+.TP
+\fBexplain\fR
+Answers 'Why was this operation denied, faked, or allowed?' Details matched rule, effective agent access vs human access, and rule origin.
+.SH EXAMPLES
+.TP
+$ \fBshb policy check\fR
+.TP
+$ \fBshb policy explain .env\fR
+.TP
+$ \fBshb policy explain DATABASE_URL\fR
+.TP
+$ \fBshb policy explain --network api.stripe.com\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev

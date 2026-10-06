@@ -1,0 +1,91 @@
+version: 2
+
+project_name: secretharbor
+
+before:
+  hooks:
+    - go mod tidy
+    - go run ./cmd/gen-man man/man1
+
+builds:
+  - id: shb
+    binary: shb
+    main: ./cmd/shb
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X github.com/secretharbor/secretharbor/internal/cli.Version={{ .Version }}
+
+  - id: secretharbor
+    binary: secretharbor
+    main: ./cmd/secretharbor
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X github.com/secretharbor/secretharbor/internal/cli.Version={{ .Version }}
+
+archives:
+  - id: default
+    name_template: "secretharbor_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    builds:
+      - shb
+      - secretharbor
+    files:
+      - README.md
+      - LICENSE*
+      - man/man1/*
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+brews:
+  - name: secretharbor
+    repository:
+      owner: secretharbor
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: secretharbor-bot
+      email: bot@secretharbor.dev
+    homepage: "https://secretharbor.dev"
+    description: "Host-level security boundary for AI agents"
+    license: "Apache-2.0"
+    install: |
+      bin.install "shb"
+      bin.install "secretharbor"
+      man1.install Dir["man/man1/*.1"]
+    test: |
+      system "#{bin}/shb", "version"
+      system "#{bin}/secretharbor", "version"

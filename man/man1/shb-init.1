@@ -1,0 +1,27 @@
+.TH SHB-INIT 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-init \- Initialize SecretHarbor host integration and project policy
+.SH SYNOPSIS
+\fBshb init [path] [--yes] [--force]\fR
+.SH DESCRIPTION
+Configures SecretHarbor host-level security for the current project. Automatically discovers supported AI agents (Claude Code, Codex, Gemini CLI, Aider, Cline) and desktop environments (Cursor, VS Code), installs transparent launcher shims (~/.secretharbor/shims), configures shell profile PATH (~/.zshrc, ~/.bashrc), scans for running agent processes, and initializes secretharbor.yaml if not present. Shims persist across system reboots.
+.SH OPTIONS
+.TP
+\fB-y\fR, \fB--yes\fR
+Automatically restart unprotected running agents without interactive confirmation
+.TP
+\fB-f\fR, \fB--force\fR
+Overwrite existing secretharbor.yaml with current default template
+.SH EXAMPLES
+.TP
+$ \fBshb init\fR
+.TP
+$ \fBshb init --yes\fR
+.TP
+$ \fBshb init --force\fR
+.TP
+$ \fBshb init ./my-project/secretharbor.yaml\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev

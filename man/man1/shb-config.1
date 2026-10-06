@@ -1,0 +1,46 @@
+.TH SHB-CONFIG 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-config \- Inspect and manage effective policy configuration
+.SH SYNOPSIS
+\fBshb config [show|check|edit|diff|source] [options]\fR
+.SH DESCRIPTION
+Inspects what SecretHarbor intends to enforce. `shb config` and `shb config show` are strictly read-only and never print secret values. `shb config edit` is a human-only operation protected against agent execution.
+.SH SUBCOMMANDS
+.TP
+\fBcheck\fR
+Checks the project policy file for YAML syntax errors, rule contradictions, and invalid presets.
+.TP
+\fBdiff\fR
+Visualizes the customizations in the current project compared to SecretHarbor's base standard security preset.
+.TP
+\fBedit\fR
+Opens the project policy in $EDITOR. Protected by a strict security boundary: sandboxed agents are denied execution to prevent policy tampering.
+.TP
+\fBget\fR
+Reads and displays the current configuration value for a specified key (e.g. protection, guard, secrets.mode, network.mode).
+.TP
+\fBset\fR
+Updates and validates a configuration setting in project policy file. Sandboxed agents are denied execution.
+.TP
+\fBshow\fR
+Displays the effective policy with all defaults, presets, and overrides resolved. Never reveals secret credentials.
+.TP
+\fBsource\fR
+Displays rule provenance and lineage, showing whether a rule originated from a preset, built-in detection, or project file override.
+.SH EXAMPLES
+.TP
+$ \fBshb config\fR
+.TP
+$ \fBshb config --json\fR
+.TP
+$ \fBshb config source\fR
+.TP
+$ \fBshb config check\fR
+.TP
+$ \fBshb config edit\fR
+.TP
+$ \fBshb config diff\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev

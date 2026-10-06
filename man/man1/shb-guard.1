@@ -1,0 +1,23 @@
+.TH SHB-GUARD 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-guard \- Enable or explicitly disable protection for this project
+.SH SYNOPSIS
+\fBshb guard <on|off>\fR
+.SH DESCRIPTION
+Control project guard state. Disabling protection requires explicit interactive confirmation to prevent accidental exposure.
+.SH SUBCOMMANDS
+.TP
+\fBoff\fR
+Explicitly disables protection for this project. Prompts with a warning detailing the security consequences.
+.TP
+\fBon\fR
+Re-enables sandbox confinement, secret virtualization, and network policy for this project.
+.SH EXAMPLES
+.TP
+$ \fBshb guard on\fR
+.TP
+$ \fBshb guard off\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev

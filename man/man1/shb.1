@@ -1,0 +1,106 @@
+.TH SHB 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb \- security layer for AI agents
+.SH SYNOPSIS
+\fBshb\fR [\fIcommand\fR] [\fIoptions\fR]
+.SH DESCRIPTION
+SecretHarbor creates an OS-enforced security boundary around AI agents and their child processes.
+It protects real secrets (.env, cloud keys, database credentials, SSH private keys) by
+transparently virtualizing them with synthetic fakes and isolating network and IPC endpoints.
+.SH COMMANDS
+.TP
+\fBinit\fR
+Initialize SecretHarbor host integration and project policy
+.TP
+\fBadopt\fR
+Discover and adopt unprotected running agents
+.TP
+\fBrestart\fR
+Cleanly restart an agent inside a fresh sandbox
+.TP
+\fBrun\fR
+Explicitly run an agent inside the security boundary (debug/fallback)
+.TP
+\fBstatus\fR
+Show active protection and enforcement status
+.TP
+\fBsessions\fR
+List active SecretHarbor sessions
+.TP
+\fBstop\fR
+Stop a guarded agent session
+.TP
+\fBconfig\fR
+Inspect and manage effective policy configuration
+.TP
+\fBpolicy\fR
+Policy validation and resource decision explanation
+.TP
+\fBsecret\fR
+Manage credentials and broker capabilities
+.TP
+\fBenv\fR
+Manage environment and live secret updates
+.TP
+\fBrestore\fR
+Restore swapped secret files to their original real values
+.TP
+\fBtrust\fR
+Manage explicitly trusted agents, tools, and processes
+.TP
+\fBdoctor\fR
+Run adversarial security verification test suite
+.TP
+\fBguard\fR
+Enable or explicitly disable protection for this project
+.TP
+\fBupdate\fR
+Check for and install SecretHarbor updates
+.TP
+\fBversion\fR
+Show SecretHarbor version and security subsystem details
+.TP
+\fBhelp\fR
+Show CLI documentation
+.SH SECURITY
+The agent cannot modify the active SecretHarbor policy or disable its own security boundary.
+File operations outside the authorized workspace and unapproved capability escalations are denied by the kernel.
+.SH EXAMPLES
+.TP
+\fBshb init\fR
+Initialize host integration, detect agents, and install persistent launcher shims
+.TP
+\fBshb adopt\fR
+Discover unprotected running agents and restart them under SecretHarbor
+.TP
+\fBshb restart claude\fR
+Cleanly restart Claude Code inside a fresh SecretHarbor sandbox
+.TP
+\fBshb status\fR
+Show host integration, active protected sessions, and unprotected processes
+.TP
+\fBshb config\fR
+Inspect effective configuration without exposing secret values
+.TP
+\fBshb policy explain .env\fR
+Explain why .env is faked or denied
+.TP
+\fBshb doctor\fR
+Run live 14-vector adversarial attack tests
+.SH FILES
+.TP
+\fIsecretharbor.yaml\fR
+Project security policy configuration.
+.TP
+\fI~/.secretharbor/shims\fR
+Transparent agent launcher shims.
+.TP
+\fI~/.secretharbor/vault.enc\fR
+AES-256-GCM encrypted local credential vault.
+.TP
+\fI~/.secretharbor/audit.log\fR
+Redacted security audit trail.
+.SH SEE ALSO
+shb-init(1), shb-adopt(1), shb-restart(1), shb-run(1), shb-status(1), shb-sessions(1), shb-stop(1), shb-config(1), shb-policy(1), shb-secret(1), shb-env(1), shb-restore(1), shb-trust(1), shb-doctor(1), shb-guard(1), shb-update(1), shb-version(1), shb-help(1)
+.SH WEBSITE
+https://secretharbor.dev

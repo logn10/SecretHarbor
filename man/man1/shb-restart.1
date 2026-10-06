@@ -1,0 +1,18 @@
+.TH SHB-RESTART 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-restart \- Cleanly restart an agent inside a fresh sandbox
+.SH SYNOPSIS
+\fBshb restart [agent]\fR
+.SH DESCRIPTION
+Stops an active SecretHarbor agent session (or terminates an unprotected running agent process) and restarts it immediately inside a freshly initialized, fully enforced OS sandbox.
+.SH EXAMPLES
+.TP
+$ \fBshb restart claude\fR
+.TP
+$ \fBshb restart codex\fR
+.TP
+$ \fBshb restart\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev

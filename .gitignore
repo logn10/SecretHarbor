@@ -1,0 +1,38 @@
+# Binaries and build artifacts
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+
+# Temporary files and directories
+.tmp/
+*.tmp
+*.old
+
+# SecretHarbor local state and test artifacts
+.secretharbor/
+**/.secretharbor/
+internal/cli/.secretharbor/
+internal/docs/.secretharbor/
+internal/vault/.secretharbor/
+
+# IDE and Editor configurations
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Coverage and test logs
+coverage.txt
+coverage.html
+*.log

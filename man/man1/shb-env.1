@@ -1,0 +1,14 @@
+.TH SHB-ENV 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-env \- Manage environment and live secret updates
+.SH SYNOPSIS
+\fBshb env [edit]\fR
+.SH DESCRIPTION
+Provides safe live editing of environment secrets. During active agent sessions, 'shb env edit' opens the real backup in $EDITOR and automatically refreshes the in-tree synthetic file for the active session without exposing secrets to the sandboxed agent.
+.SH EXAMPLES
+.TP
+$ \fBshb env edit\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev

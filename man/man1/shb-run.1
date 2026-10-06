@@ -1,0 +1,24 @@
+.TH SHB-RUN 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-run \- Explicitly run an agent inside the security boundary (debug/fallback)
+.SH SYNOPSIS
+\fBshb run <agent> [args...] | run -- <command...>\fR
+.SH DESCRIPTION
+Executes an AI agent or arbitrary command inside an OS-enforced security sandbox with secret virtualization, environment sanitization, and network proxying. Note: After 'shb init', agents (e.g. claude, codex, gemini) automatically run guarded when launched directly. 'shb run' provides an explicit invocation path and debugging fallback. Unrecognized binaries and arbitrary commands default to Runtime: process, Integration: unknown and are always confined under standard sandbox protections (Universal Untrusted Fallback Invariant). SecretHarbor enforces a strict fail-closed invariant: if the security boundary cannot be established, the agent is refused launch.
+.SH EXAMPLES
+.TP
+$ \fBshb run claude\fR
+.TP
+$ \fBshb run gemini\fR
+.TP
+$ \fBshb run codex\fR
+.TP
+$ \fBshb run cursor\fR
+.TP
+$ \fBshb run -- npm test\fR
+.TP
+$ \fBshb run -- /bin/sh -c "pytest"\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev

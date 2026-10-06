@@ -1,0 +1,28 @@
+.TH SHB-TRUST 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-trust \- Manage explicitly trusted agents, tools, and processes
+.SH SYNOPSIS
+\fBshb trust <list|add|remove> [name]\fR
+.SH DESCRIPTION
+Configure authorized tools, MCP servers, and processes that have human-level trust boundaries.
+.SH SUBCOMMANDS
+.TP
+\fBadd\fR
+Authorizes a specific tool, executable, or MCP server to run with trusted boundaries.
+.TP
+\fBlist\fR
+Lists all processes and tools currently recognized as trusted in the project policy.
+.TP
+\fBremove\fR
+Revokes trusted status from an agent or process.
+.SH EXAMPLES
+.TP
+$ \fBshb trust list\fR
+.TP
+$ \fBshb trust add git\fR
+.TP
+$ \fBshb trust remove git\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev

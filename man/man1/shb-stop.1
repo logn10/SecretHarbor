@@ -1,0 +1,16 @@
+.TH SHB-STOP 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-stop \- Stop a guarded agent session
+.SH SYNOPSIS
+\fBshb stop [session-id]\fR
+.SH DESCRIPTION
+Cleanly terminates the agent process tree and cleans up temporary sandbox/proxy state. Crucially, stopping an agent session never weakens or alters the SecretHarbor security policy.
+.SH EXAMPLES
+.TP
+$ \fBshb stop\fR
+.TP
+$ \fBshb stop a81f\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev

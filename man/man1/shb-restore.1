@@ -1,0 +1,27 @@
+.TH SHB-RESTORE 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-restore \- Restore swapped secret files to their original real values
+.SH SYNOPSIS
+\fBshb restore [path] [--all] [--orphans]\fR
+.SH DESCRIPTION
+Restores project secret files (.env) from the secure vault backup back to their original disk locations. Safely performs 3-way reconciliation so that newly added configuration keys and edited variables are preserved while real secrets are restored.
+.SH OPTIONS
+.TP
+\fB-a\fR, \fB--all\fR
+Restore swapped secret files across all registered projects
+.TP
+\fB-o\fR, \fB--orphans\fR
+Restore orphaned swaps left by crashed or terminated processes
+.SH EXAMPLES
+.TP
+$ \fBshb restore\fR
+.TP
+$ \fBshb restore --all\fR
+.TP
+$ \fBshb restore --orphans\fR
+.TP
+$ \fBshb restore /path/to/project\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev

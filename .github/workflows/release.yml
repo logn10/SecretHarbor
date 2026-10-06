@@ -1,0 +1,116 @@
+name: SecretHarbor Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  goreleaser:
+    name: Build & Publish Release
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Generate Unix Man Pages
+        run: |
+          go run ./cmd/gen-man man/man1
+
+      - name: Import Apple Code Signing Certificate (Optional)
+        if: env.APPLE_CERTIFICATE_BASE64 != ''
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security import $RUNNER_TEMP/certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+      - name: Generate and Upload Release Manifest (manifest.json)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          python3 -c "
+          import json, os, urllib.request, hashlib
+
+          tag = os.environ['TAG_NAME']
+          version = tag.lstrip('v')
+          signing_key_hex = os.environ.get('RELEASE_SIGNING_KEY', '').strip()
+          signer = None
+          if signing_key_hex:
+              try:
+                  from cryptography.hazmat.primitives.asymmetric import ed25519
+                  key_bytes = bytes.fromhex(signing_key_hex)
+                  if len(key_bytes) == 32:
+                      signer = ed25519.Ed25519PrivateKey.from_private_bytes(key_bytes)
+                  elif len(key_bytes) == 64:
+                      signer = ed25519.Ed25519PrivateKey.from_private_bytes(key_bytes[:32])
+              except Exception as e:
+                  print(f'Warning: failed to load signing key: {e}')
+
+          manifest = {
+              'version': version,
+              'published_at': '$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")',
+              'release_notes': f'SecretHarbor release {tag}',
+              'artifacts': {},
+              'signatures': {}
+          }
+
+          platforms = [
+              ('darwin', 'arm64', f'secretharbor_{version}_darwin_arm64.tar.gz'),
+              ('darwin', 'amd64', f'secretharbor_{version}_darwin_amd64.tar.gz'),
+              ('linux', 'arm64', f'secretharbor_{version}_linux_arm64.tar.gz'),
+              ('linux', 'amd64', f'secretharbor_{version}_linux_amd64.tar.gz'),
+              ('windows', 'amd64', f'secretharbor_{version}_windows_amd64.zip'),
+          ]
+
+          for os_name, arch, fname in platforms:
+              dist_path = os.path.join('dist', fname)
+              if os.path.exists(dist_path):
+                  with open(dist_path, 'rb') as f:
+                      content = f.read()
+                      sha = hashlib.sha256(content).hexdigest()
+                      if signer:
+                          sig = signer.sign(content).hex()
+                          manifest['signatures'][f'{os_name}-{arch}'] = sig
+                  manifest['artifacts'][f'{os_name}-{arch}'] = {
+                      'url': f'https://github.com/secretharbor/secretharbor/releases/download/{tag}/{fname}',
+                      'filename': fname,
+                      'sha256': sha,
+                      'size': os.path.getsize(dist_path)
+                  }
+
+          with open('dist/manifest.json', 'w') as out:
+              json.dump(manifest, out, indent=2)
+          "
+          gh release upload "$TAG_NAME" dist/manifest.json --clobber

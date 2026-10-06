@@ -1,0 +1,33 @@
+.TH SHB-UPDATE 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
+.SH NAME
+shb-update \- Check for and install SecretHarbor updates
+.SH SYNOPSIS
+\fBshb update [--check] [--version <ver>] [--dry-run] [--json]\fR
+.SH DESCRIPTION
+Checks for and installs a newer SecretHarbor CLI and runtime version. Does not alter project security policy. Features cryptographic checksum and signature verification, atomic replacement with automatic rollback, and agent lockout protection.
+.SH OPTIONS
+.TP
+\fB-c\fR, \fB--check\fR
+Check for newer versions without installing
+.TP
+\fB-v\fR, \fB--version\fR
+Target a specific release version
+.TP
+\fB-n\fR, \fB--dry-run\fR
+Simulate download and signature verification without replacing binary
+.TP
+\fB-j\fR, \fB--json\fR
+Output update check results in JSON format
+.SH EXAMPLES
+.TP
+$ \fBshb update\fR
+.TP
+$ \fBshb update --check\fR
+.TP
+$ \fBshb update --version 0.4.0\fR
+.TP
+$ \fBshb update --dry-run\fR
+.SH SEE ALSO
+shb(1)
+.SH WEBSITE
+https://secretharbor.dev
