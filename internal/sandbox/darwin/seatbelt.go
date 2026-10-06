@@ -55,23 +55,44 @@ func (s *DarwinSandbox) Prepare(plan *compiler.CompiledPlan) error {
 		denyExceptions = plan.Policy.Exceptions.Deny
 	}
 
-	// 1. Secret virtualization & in-place swap
+	// 1. Secret virtualization.
+	// Fake mode uses a shadow workspace: the real project (including .env) is never
+	// modified, and only the sandboxed process tree sees synthetic fakes.
 	if s.plan.Filesystem.Mode == policy.SecretModeFake {
-		// In-place swap: Real secret files are backed up to ~/.secretharbor/vault/shadow_backups/
-		// and replaced in-tree with format-preserving synthetic fake secrets.
-		swapRec, err := secrets.SwapInPlace(
+		secretFiles, err := secrets.DetectSecretFilesInDir(
 			plan.ProjectDir,
 			allowExceptions,
 			denyExceptions,
-			os.Getpid(),
 		)
 		if err != nil {
-			return fmt.Errorf("failed to prepare in-place secret swap: %w", err)
+			return fmt.Errorf("failed to detect secret files in project directory: %w", err)
 		}
-		if swapRec != nil {
-			s.swapRecord = swapRec
-			// Secret symlinks resolving outside the project are not modified; deny them outright.
-			s.plan.Filesystem.DeniedPaths = append(s.plan.Filesystem.DeniedPaths, swapRec.DeniedExternal...)
+
+		if len(secretFiles) > 0 {
+			ve, err := secrets.PrepareVirtualization(secretFiles)
+			if err != nil {
+				return fmt.Errorf("failed to prepare secret virtualization: %w", err)
+			}
+			ve.ProtectedPaths = plan.Filesystem.SelfProtectedPaths
+
+			ws, err := ve.CreateShadowWorkspace(plan.ProjectDir)
+			if err != nil {
+				ve.Cleanup()
+				return fmt.Errorf("failed to create shadow workspace: %w", err)
+			}
+			ve.WorkspaceDir = ws
+			s.virtualEnv = ve
+			s.shadowWorkspace = ws
+			s.plan.Filesystem.FakeFiles = ve.FileMap
+
+			// Deny the real secret paths (and any symlink targets) so absolute or
+			// git-root-relative resolution cannot reach the real values.
+			for _, f := range secretFiles {
+				s.plan.Filesystem.DeniedPaths = append(s.plan.Filesystem.DeniedPaths, f)
+				if resolved, rerr := filepath.EvalSymlinks(f); rerr == nil && resolved != f {
+					s.plan.Filesystem.DeniedPaths = append(s.plan.Filesystem.DeniedPaths, resolved)
+				}
+			}
 		}
 	} else if s.plan.Filesystem.Mode == policy.SecretModeDeny {
 		secretFiles, err := secrets.DetectSecretFilesInDir(
@@ -126,7 +147,9 @@ func (s *DarwinSandbox) Launch(command string, args []string, extraEnv []string)
 		}
 
 		var synthVars map[string]string
-		if s.swapRecord != nil && len(s.swapRecord.SyntheticValues) > 0 {
+		if s.virtualEnv != nil && len(s.virtualEnv.SyntheticValues) > 0 {
+			synthVars = s.virtualEnv.SyntheticValues
+		} else if s.swapRecord != nil && len(s.swapRecord.SyntheticValues) > 0 {
 			synthVars = s.swapRecord.SyntheticValues
 		} else {
 			synthVars = secrets.ExtractEnvFromSwappedFiles(s.plan.ProjectDir)
@@ -195,7 +218,9 @@ func (s *DarwinSandbox) Cleanup() {
 	if s.virtualEnv != nil {
 		_ = s.virtualEnv.SyncBack(s.plan.ProjectDir)
 		s.virtualEnv.Cleanup()
+		s.virtualEnv = nil
 	}
+	s.shadowWorkspace = ""
 }
 
 func (s *DarwinSandbox) generateSeatbeltProfile() string {

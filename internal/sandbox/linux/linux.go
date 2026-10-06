@@ -88,8 +88,21 @@ func (s *LinuxSandbox) Prepare(plan *compiler.CompiledPlan) error {
 
 	switch plan.Filesystem.Mode {
 	case policy.SecretModeFake:
-		if len(secretFiles) > 0 {
-			ve, err := secrets.PrepareVirtualization(secretFiles)
+		// Files matching explicit deny exceptions are masked (denied), never faked.
+		deniedSet := make(map[string]bool)
+		for _, f := range secrets.FindMatchingFiles(plan.ProjectDir, denyExceptions) {
+			deniedSet[f] = true
+		}
+		var fakeTargets []string
+		for _, f := range secretFiles {
+			if deniedSet[f] {
+				s.plan.Filesystem.DeniedPaths = append(s.plan.Filesystem.DeniedPaths, f)
+				continue
+			}
+			fakeTargets = append(fakeTargets, f)
+		}
+		if len(fakeTargets) > 0 {
+			ve, err := secrets.PrepareVirtualization(fakeTargets)
 			if err != nil {
 				return fmt.Errorf("failed to prepare virtualization: %w", err)
 			}

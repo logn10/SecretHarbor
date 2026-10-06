@@ -4,7 +4,7 @@ shb-env \- Manage environment and live secret updates
 .SH SYNOPSIS
 \fBshb env [edit]\fR
 .SH DESCRIPTION
-Provides safe live editing of environment secrets. During active agent sessions, 'shb env edit' opens the real backup in $EDITOR and automatically refreshes the in-tree synthetic file for the active session without exposing secrets to the sandboxed agent.
+Safe live editing of environment secrets. Opens the real .env in $EDITOR (or the legacy vault backup for an active in-place swap session). A running agent session keeps its synthetic copy; restart the session to pick up new values.
 .SH EXAMPLES
 .TP
 $ \fBshb env edit\fR

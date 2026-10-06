@@ -4,7 +4,7 @@ shb-doctor \- Run adversarial security verification test suite
 .SH SYNOPSIS
 \fBshb doctor\fR
 .SH DESCRIPTION
-Executes a 14-vector adversarial attack suite verifying that direct file reads, interpreter reads, symlinks, path traversals, file copies, environment variables, privileged sockets, Docker socket access, container secret directories (/run/secrets), DOCKER_HOST leakage, and policy files cannot be exploited by the agent.
+Executes an 18-vector adversarial attack suite verifying that direct file reads, interpreter reads, symlinks, path traversals, file copies, renames, environment variables, privileged sockets, Docker socket access, container secret directories (/run/secrets), DOCKER_HOST leakage, inherited file descriptors, policy files, ptrace, core dumps, raw network egress, and filesystem escapes cannot be exploited by the agent.
 .SH EXAMPLES
 .TP
 $ \fBshb doctor\fR

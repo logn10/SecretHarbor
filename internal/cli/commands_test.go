@@ -413,3 +413,26 @@ func TestGuardAgentLockout(t *testing.T) {
 		t.Error("expected sandboxed agent to be denied guard on")
 	}
 }
+
+func TestSameDirectoryResolvesSymlinks(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.MkdirAll(real, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(base, "other")
+	if err := os.MkdirAll(other, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	if !sameDirectory(real, link) {
+		t.Error("expected symlinked path to be recognized as the same directory")
+	}
+	if sameDirectory(real, other) {
+		t.Error("expected different directories to be distinguished")
+	}
+}

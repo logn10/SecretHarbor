@@ -67,22 +67,26 @@ func CleanOrphans() CleanResult {
 			}
 		}
 
-		// 2. Clean stale secretharbor scratch workspaces older than 2 hours or with dead PIDs
-		scratchMatches, err := filepath.Glob(filepath.Join(tempDir, "secretharbor-*"))
-		if err == nil {
-			now := time.Now()
-			for _, path := range scratchMatches {
-				fi, err := os.Stat(path)
-				if err != nil {
-					continue
-				}
-				// If older than 2 hours, clean up
-				if now.Sub(fi.ModTime()) > 2*time.Hour {
-					if err := os.RemoveAll(path); err == nil {
-						res.CleanedWorkspaces++
-					} else {
-						res.CleanedErrors++
-					}
+		// 2. Clean stale shadow/scratch workspaces older than 2 hours.
+		// Only match the dedicated workspace prefixes, never arbitrary user directories.
+		var scratchMatches []string
+		for _, prefix := range []string{"secretharbor-shadow-*", "secretharbor-ws-*"} {
+			if matches, err := filepath.Glob(filepath.Join(tempDir, prefix)); err == nil {
+				scratchMatches = append(scratchMatches, matches...)
+			}
+		}
+		now := time.Now()
+		for _, path := range scratchMatches {
+			fi, err := os.Stat(path)
+			if err != nil {
+				continue
+			}
+			// If older than 2 hours, clean up
+			if now.Sub(fi.ModTime()) > 2*time.Hour {
+				if err := os.RemoveAll(path); err == nil {
+					res.CleanedWorkspaces++
+				} else {
+					res.CleanedErrors++
 				}
 			}
 		}

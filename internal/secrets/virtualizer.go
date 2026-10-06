@@ -8,12 +8,14 @@ import (
 	"strings"
 )
 
-// VirtualizedEnvironment manages synthetic fake secret files on disk.
+// VirtualizedEnvironment manages synthetic fake secret files and a shadow workspace.
 type VirtualizedEnvironment struct {
-	ShadowDir    string
-	WorkspaceDir string
-	FileMap      map[string]string // real absolute path -> synthetic shadow file path
-	InitialFiles map[string]bool   // non-secret real files linked at start
+	ShadowDir       string
+	WorkspaceDir    string
+	FileMap         map[string]string // real absolute path -> synthetic shadow file path
+	InitialFiles    map[string]bool   // non-secret real files linked at start
+	SyntheticValues map[string]string // env var -> synthetic fake value
+	ProtectedPaths  []string          // control-plane paths that must stay read-only in the shadow
 }
 
 // PrepareVirtualization creates shadow files for all detected secret files.
@@ -24,8 +26,9 @@ func PrepareVirtualization(secretFiles []string) (*VirtualizedEnvironment, error
 	}
 
 	ve := &VirtualizedEnvironment{
-		ShadowDir: tempDir,
-		FileMap:   make(map[string]string),
+		ShadowDir:       tempDir,
+		FileMap:         make(map[string]string),
+		SyntheticValues: make(map[string]string),
 	}
 
 	for _, realPath := range secretFiles {
@@ -35,6 +38,14 @@ func PrepareVirtualization(secretFiles []string) (*VirtualizedEnvironment, error
 			return nil, fmt.Errorf("failed to virtualize %s: %w", realPath, err)
 		}
 		ve.FileMap[realPath] = fakePath
+
+		if strings.HasPrefix(filepath.Base(realPath), ".env") {
+			if data, err := os.ReadFile(fakePath); err == nil {
+				for k, v := range ParseEnvContent(string(data)) {
+					ve.SyntheticValues[k] = v
+				}
+			}
+		}
 	}
 
 	return ve, nil
@@ -98,8 +109,10 @@ func (ve *VirtualizedEnvironment) createShadowFile(realPath string) (string, err
 	return destPath, nil
 }
 
-// CreateShadowWorkspace creates an ephemeral linked project directory where non-secret files
-// are hard-linked to the real files and secret files are replaced by synthetic fakes.
+// CreateShadowWorkspace creates an ephemeral project mirror where non-secret files are
+// hard-linked to the real files (so edits flow both ways), secret files are replaced by
+// synthetic fakes, and control-plane paths are read-only copies. The real project is
+// never modified by this function.
 func (ve *VirtualizedEnvironment) CreateShadowWorkspace(projectDir string) (string, error) {
 	wsDir, err := os.MkdirTemp("", "secretharbor-ws-*")
 	if err != nil {
@@ -143,7 +156,16 @@ func (ve *VirtualizedEnvironment) CreateShadowWorkspace(projectDir string) (stri
 			return err
 		}
 
-		// Double-check: ensure any secret file is never marked as initial non-secret file
+		// Control-plane files are exposed read-only so the agent cannot alter the
+		// real file through a hard link in the shadow workspace.
+		if ve.isProtected(path) {
+			if err := copyFile(path, destPath, info.Mode()); err != nil {
+				return err
+			}
+			return os.Chmod(destPath, 0400)
+		}
+
+		// Double-check: ensure any secret file is never linked as a non-secret file
 		if IsSecretFile(path, projectDir, nil, nil) {
 			return nil
 		}
@@ -160,8 +182,36 @@ func (ve *VirtualizedEnvironment) CreateShadowWorkspace(projectDir string) (stri
 	return wsDir, err
 }
 
-// SyncBack copies newly created files and directories from the shadow workspace
-// back to the real project directory and syncs deletions. Secret files and directories are never copied back.
+func (ve *VirtualizedEnvironment) isProtected(path string) bool {
+	cleanPath := filepath.Clean(path)
+	for _, p := range ve.ProtectedPaths {
+		if p == "" {
+			continue
+		}
+		cleanProtected := filepath.Clean(p)
+		if cleanPath == cleanProtected || strings.HasPrefix(cleanPath, cleanProtected+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+func (ve *VirtualizedEnvironment) isSecretPath(path string) bool {
+	cleanPath := filepath.Clean(path)
+	if _, isSecret := ve.FileMap[cleanPath]; isSecret {
+		return true
+	}
+	for realSec := range ve.FileMap {
+		if strings.HasPrefix(cleanPath, realSec+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// SyncBack copies agent-created and agent-modified non-secret files from the shadow
+// workspace back to the real project, and syncs deletions. Secret and control-plane
+// files are never copied back.
 func (ve *VirtualizedEnvironment) SyncBack(projectDir string) error {
 	if ve.WorkspaceDir == "" {
 		return nil
@@ -169,20 +219,13 @@ func (ve *VirtualizedEnvironment) SyncBack(projectDir string) error {
 
 	cleanProj := filepath.Clean(projectDir)
 
-	// 1. Sync deletions: If a non-secret file existed initially in projectDir but was deleted
-	// by the agent in the shadow workspace, remove it from projectDir as well.
+	// 1. Sync deletions for tracked non-secret files.
 	for origPath := range ve.InitialFiles {
-		// Safety check: Never delete virtualized or sensitive secret files from host project
-		if _, isSecret := ve.FileMap[origPath]; isSecret {
+		if ve.isSecretPath(origPath) || ve.isProtected(origPath) {
 			continue
 		}
 		if IsSecretFile(origPath, projectDir, nil, nil) {
 			continue
-		}
-		for realSec := range ve.FileMap {
-			if realSec == origPath || strings.HasPrefix(origPath, realSec+string(filepath.Separator)) {
-				continue
-			}
 		}
 
 		rel, err := filepath.Rel(projectDir, origPath)
@@ -190,7 +233,6 @@ func (ve *VirtualizedEnvironment) SyncBack(projectDir string) error {
 			continue
 		}
 		shadowPath := filepath.Join(ve.WorkspaceDir, rel)
-		// Use os.Lstat to check if file/symlink itself still exists in shadow workspace
 		if _, err := os.Lstat(shadowPath); os.IsNotExist(err) {
 			_ = os.Remove(origPath)
 		}
@@ -205,20 +247,12 @@ func (ve *VirtualizedEnvironment) SyncBack(projectDir string) error {
 			return nil
 		}
 
-		// Prevent directory traversal: verify clean relative path does not escape workspace
 		cleanRel := filepath.Clean(rel)
 		if cleanRel == ".." || strings.HasPrefix(cleanRel, ".."+string(filepath.Separator)) {
 			return nil
 		}
 
-		// Skip top-level and nested .git, node_modules, and .secretharbor
-		base := info.Name()
-		if base == ".git" || base == "node_modules" || base == ".secretharbor" {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
+		// Skip .git, node_modules, and .secretharbor anywhere in the tree
 		for _, part := range strings.Split(filepath.ToSlash(cleanRel), "/") {
 			if part == ".git" || part == "node_modules" || part == ".secretharbor" {
 				if info.IsDir() {
@@ -236,19 +270,13 @@ func (ve *VirtualizedEnvironment) SyncBack(projectDir string) error {
 		targetPath := filepath.Join(projectDir, cleanRel)
 		cleanTarget := filepath.Clean(targetPath)
 
-		// Ensure target strictly resides within projectDir
 		if cleanTarget != cleanProj && !strings.HasPrefix(cleanTarget, cleanProj+string(filepath.Separator)) {
 			return nil
 		}
 
-		// Never sync back virtualized secret files
-		if _, isSecret := ve.FileMap[targetPath]; isSecret {
+		// Never sync back virtualized secrets or control-plane files
+		if ve.isSecretPath(targetPath) || ve.isProtected(targetPath) {
 			return nil
-		}
-		for realSec := range ve.FileMap {
-			if realSec == targetPath || strings.HasPrefix(targetPath, realSec+string(filepath.Separator)) {
-				return nil
-			}
 		}
 		if IsSecretFile(targetPath, projectDir, nil, nil) {
 			return nil
@@ -258,11 +286,21 @@ func (ve *VirtualizedEnvironment) SyncBack(projectDir string) error {
 			return os.MkdirAll(targetPath, info.Mode()|0700)
 		}
 
-		// If target does not exist on host, it was created by the agent in the shadow workspace
-		if _, err := os.Stat(targetPath); os.IsNotExist(err) {
+		targetInfo, statErr := os.Stat(targetPath)
+		if os.IsNotExist(statErr) {
 			return copyFile(path, targetPath, info.Mode())
 		}
-
+		if statErr != nil {
+			return nil
+		}
+		// Hard-linked files share the inode: in-place edits are already visible on the
+		// real file. Rename-style edits replace the shadow inode, so copy those back.
+		if os.SameFile(info, targetInfo) {
+			return nil
+		}
+		if info.Size() != targetInfo.Size() || !info.ModTime().Equal(targetInfo.ModTime()) {
+			return copyFile(path, targetPath, targetInfo.Mode())
+		}
 		return nil
 	})
 }

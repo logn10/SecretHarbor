@@ -204,7 +204,7 @@ func TestAuditCleanerOsTempDir(t *testing.T) {
 	}
 	defer func() { _ = os.Remove(fakeSocket) }()
 
-	staleWorkspace := filepath.Join(sysTmp, "secretharbor-test-cleaner-audit")
+	staleWorkspace := filepath.Join(sysTmp, "secretharbor-shadow-test-cleaner-audit")
 	if err := os.MkdirAll(staleWorkspace, 0700); err != nil {
 		t.Fatalf("failed to create fake workspace: %v", err)
 	}

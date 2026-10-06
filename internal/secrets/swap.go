@@ -26,6 +26,7 @@ type SwappedFile struct {
 	FileMode          os.FileMode `json:"file_mode"`
 	RealHash          string      `json:"real_hash"`
 	SyntheticBaseline string      `json:"synthetic_baseline"`
+	LinkTarget        string      `json:"link_target,omitempty"`
 }
 
 // SwapRecord persists the state of an active project in-place secret swap.
@@ -255,6 +256,19 @@ func saveActiveSwapsLocked(swaps map[string]*SwapRecord) error {
 	return atomicWriteFile(path, data, 0600)
 }
 
+// CanonicalProjectPath returns the symlink-resolved absolute path for a project directory.
+func CanonicalProjectPath(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		abs = dir
+	}
+	abs = filepath.Clean(abs)
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil && resolved != "" {
+		abs = filepath.Clean(resolved)
+	}
+	return abs
+}
+
 // ProjectHash returns a deterministic short hash for a project path.
 func ProjectHash(projectDir string) string {
 	clean := filepath.Clean(projectDir)
@@ -311,17 +325,10 @@ func SwapInPlace(projectDir string, allowExceptions, denyExceptions []string, pi
 	}
 	defer unlock()
 
-	absProj, err := filepath.Abs(projectDir)
-	if err != nil {
-		absProj = projectDir
-	}
-	absProj = filepath.Clean(absProj)
+	absProj := CanonicalProjectPath(projectDir)
 
 	// Canonical project root for symlink containment checks (e.g. /var -> /private/var on macOS).
 	canonProj := absProj
-	if resolvedProj, err := filepath.EvalSymlinks(absProj); err == nil && resolvedProj != "" {
-		canonProj = filepath.Clean(resolvedProj)
-	}
 
 	swaps, err := loadActiveSwapsLocked()
 	if err != nil {
@@ -387,12 +394,15 @@ func SwapInPlace(projectDir string, allowExceptions, denyExceptions []string, pi
 		}
 
 		// BUG-010: Symlink handling.
-		// - Symlinks resolving inside the project are swapped at their target (safe, still virtualized).
-		// - Symlinks resolving outside the project are never modified and are denied by the sandbox.
+		// - In-project symlinks are swapped at their target (safe, still virtualized).
+		// - External symlinks are replaced by a synthetic regular file for the session,
+		//   the symlink is restored afterwards, and direct reads of the external target
+		//   are denied. The external target is never modified.
 		linfo, err := os.Lstat(realPath)
 		if err != nil {
 			continue
 		}
+		externalLinkTarget := ""
 		if linfo.Mode()&os.ModeSymlink != 0 {
 			resolved, rerr := filepath.EvalSymlinks(realPath)
 			if rerr != nil {
@@ -401,15 +411,18 @@ func SwapInPlace(projectDir string, allowExceptions, denyExceptions []string, pi
 			}
 			relResolved, rerr := filepath.Rel(canonProj, resolved)
 			if rerr != nil || strings.HasPrefix(relResolved, "..") || filepath.IsAbs(relResolved) {
+				if lt, lerr := os.Readlink(realPath); lerr == nil {
+					externalLinkTarget = lt
+				}
 				rec.DeniedExternal = append(rec.DeniedExternal, resolved)
-				continue
-			}
-			realPath = resolved
-			rel = relResolved
-			linfo, err = os.Lstat(realPath)
-			if err != nil || linfo.Mode()&os.ModeSymlink != 0 {
-				rec.DeniedExternal = append(rec.DeniedExternal, realPath)
-				continue
+			} else {
+				realPath = resolved
+				rel = relResolved
+				linfo, err = os.Lstat(realPath)
+				if err != nil || linfo.Mode()&os.ModeSymlink != 0 {
+					rec.DeniedExternal = append(rec.DeniedExternal, realPath)
+					continue
+				}
 			}
 		}
 
@@ -498,6 +511,15 @@ func SwapInPlace(projectDir string, allowExceptions, denyExceptions []string, pi
 			fakeContent = "# SecretHarbor Protected Synthetic Placeholder\n"
 		}
 
+		// An external symlink is replaced by a synthetic regular file; the link is
+		// restored after the session and the external target is never modified.
+		if externalLinkTarget != "" {
+			if err := os.Remove(realPath); err != nil {
+				_ = restoreSwapLocked(absProj)
+				return nil, fmt.Errorf("failed to replace external symlink %s: %w", realPath, err)
+			}
+		}
+
 		// Write synthetic fake in place at realPath (preserving original permissions) via atomic write
 		if err := atomicWriteFile(realPath, []byte(fakeContent), info.Mode()); err != nil {
 			_ = restoreSwapLocked(absProj)
@@ -511,6 +533,7 @@ func SwapInPlace(projectDir string, allowExceptions, denyExceptions []string, pi
 			FileMode:          info.Mode(),
 			RealHash:          realHash,
 			SyntheticBaseline: fakeContent,
+			LinkTarget:        externalLinkTarget,
 		})
 	}
 
@@ -585,11 +608,7 @@ func findSwapRecordForProject(swaps map[string]*SwapRecord, absProj string) (*Sw
 }
 
 func restoreSwapLocked(projectDir string) error {
-	absProj, err := filepath.Abs(projectDir)
-	if err != nil {
-		absProj = projectDir
-	}
-	absProj = filepath.Clean(absProj)
+	absProj := CanonicalProjectPath(projectDir)
 
 	swaps, err := loadActiveSwapsLocked()
 	if err != nil {
@@ -704,10 +723,12 @@ func restoreSwapLocked(projectDir string) error {
 
 	// Prepare restore plan in memory first (BUG-011)
 	type restorePlan struct {
-		targetPath string
-		backupPath string
-		data       []byte
-		mode       os.FileMode
+		targetPath  string
+		backupPath  string
+		data        []byte
+		mode        os.FileMode
+		linkTarget  string // non-empty: restore the original external symlink
+		writeToLink bool   // external target edited during session: write reconciled content there
 	}
 	var plan []restorePlan
 
@@ -718,15 +739,6 @@ func restoreSwapLocked(projectDir string) error {
 		}
 		// Restore to current project root, accommodating rename/move (BUG-002)
 		targetPath := filepath.Join(absProj, relPath)
-
-		// Check symlinks pointing outside project boundary (BUG-010)
-		tinfo, err := os.Lstat(targetPath)
-		if err == nil && tinfo.Mode()&os.ModeSymlink != 0 {
-			resolved, err := filepath.EvalSymlinks(targetPath)
-			if err != nil || strings.HasPrefix(resolved, "..") {
-				return fmt.Errorf("refusing to restore into external symlink: %s", targetPath)
-			}
-		}
 
 		backupEncrypted, err := os.ReadFile(sf.BackupPath)
 		if err != nil {
@@ -739,26 +751,52 @@ func restoreSwapLocked(projectDir string) error {
 		}
 
 		currentBytes, err := os.ReadFile(targetPath)
+		edited := false
 		var restoredData []byte
 		if err != nil {
 			// Original was deleted or missing; restore directly from backup
 			restoredData = backupBytes
 		} else {
+			if strings.TrimSpace(string(currentBytes)) != strings.TrimSpace(sf.SyntheticBaseline) {
+				edited = true
+			}
 			// Perform 3-Way Reconciliation
 			reconciled := ReconcileEnvFiles(string(backupBytes), sf.SyntheticBaseline, string(currentBytes))
 			restoredData = []byte(reconciled)
 		}
 
-		plan = append(plan, restorePlan{
+		entry := restorePlan{
 			targetPath: targetPath,
 			backupPath: sf.BackupPath,
 			data:       restoredData,
 			mode:       sf.FileMode,
-		})
+		}
+		if sf.LinkTarget != "" {
+			entry.linkTarget = sf.LinkTarget
+			entry.writeToLink = edited
+		}
+		plan = append(plan, entry)
 	}
 
-	// Execute atomic writes for all files (BUG-011)
+	// Execute the plan: write files, or write reconciled edits to the original
+	// external target and recreate the symlink (BUG-010).
 	for _, p := range plan {
+		if p.linkTarget != "" {
+			if p.writeToLink {
+				if fi, err := os.Stat(p.linkTarget); err == nil && !fi.IsDir() {
+					if err := atomicWriteFile(p.linkTarget, p.data, fi.Mode()); err != nil {
+						return fmt.Errorf("failed to write reconciled content to %s: %w", p.linkTarget, err)
+					}
+				}
+			}
+			if err := os.Remove(p.targetPath); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("failed to remove synthetic file %s: %w", p.targetPath, err)
+			}
+			if err := os.Symlink(p.linkTarget, p.targetPath); err != nil {
+				return fmt.Errorf("failed to restore symlink %s -> %s: %w", p.targetPath, p.linkTarget, err)
+			}
+			continue
+		}
 		if err := atomicWriteFile(p.targetPath, p.data, p.mode); err != nil {
 			// DO NOT DELETE BACKUP DIRECTORY OR ACTIVE_SWAPS REGISTRY ON FAILURE!
 			return fmt.Errorf("atomic restore write failed for %s: %w", p.targetPath, err)
@@ -866,11 +904,7 @@ func UpdateSwapPID(projectDir string, newPID int) {
 	}
 	defer unlock()
 
-	absProj, err := filepath.Abs(projectDir)
-	if err != nil {
-		absProj = projectDir
-	}
-	absProj = filepath.Clean(absProj)
+	absProj := CanonicalProjectPath(projectDir)
 
 	swaps, err := loadActiveSwapsLocked()
 	if err != nil {
@@ -974,11 +1008,7 @@ func ReconcileEnvFiles(realContent, baselineSynthetic, currentContent string) st
 
 // ExtractEnvFromSwappedFiles returns synthetic environment variables from all swapped files in projectDir.
 func ExtractEnvFromSwappedFiles(projectDir string) map[string]string {
-	absProj, err := filepath.Abs(projectDir)
-	if err != nil {
-		absProj = projectDir
-	}
-	absProj = filepath.Clean(absProj)
+	absProj := CanonicalProjectPath(projectDir)
 
 	swaps, err := LoadActiveSwaps()
 	if err != nil {

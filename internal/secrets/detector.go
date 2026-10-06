@@ -107,6 +107,42 @@ func IsSecretFile(relOrAbsPath string, projectDir string, allowExceptions []stri
 	return false
 }
 
+// FindMatchingFiles returns absolute paths under projectDir whose relative path or
+// base name matches any of the given patterns (supports ** semantics).
+func FindMatchingFiles(projectDir string, patterns []string) []string {
+	if len(patterns) == 0 {
+		return nil
+	}
+
+	var found []string
+	_ = filepath.Walk(projectDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return nil
+		}
+		if info.IsDir() {
+			switch info.Name() {
+			case ".git", ".secretharbor", "node_modules", "vendor", "dist", "target":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		relPath, relErr := filepath.Rel(projectDir, path)
+		if relErr != nil {
+			relPath = path
+		}
+		fileName := filepath.Base(relPath)
+		for _, pattern := range patterns {
+			if matchPattern(pattern, relPath, fileName) {
+				found = append(found, path)
+				break
+			}
+		}
+		return nil
+	})
+	return found
+}
+
 // DetectSecretFilesInDir scans the project directory for files that match secret patterns.
 func DetectSecretFilesInDir(projectDir string, allowExceptions []string, denyExceptions []string) ([]string, error) {
 	var found []string

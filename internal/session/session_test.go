@@ -89,10 +89,12 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Fatalf("failed to stop session: %v", err)
 	}
 
-	// Verify sandbox dir was cleaned up
-	if _, err := os.Stat(dummySandbox); !os.IsNotExist(err) {
-		t.Errorf("expected sandbox directory to be deleted on stop")
+	// Scratch directories are owned by the sandbox supervisor (synced and removed
+	// during sandbox cleanup) or reclaimed by the age-based cleaner, not by session stop.
+	if _, err := os.Stat(dummySandbox); err != nil {
+		t.Errorf("sandbox scratch directory should still exist after stop (cleanup is deferred): %v", err)
 	}
+	_ = os.RemoveAll(dummySandbox)
 
 	// Allow OS a brief moment to reap
 	time.Sleep(100 * time.Millisecond)
@@ -166,5 +168,36 @@ func TestSessionIdentityValidation(t *testing.T) {
 	}
 	if sess.ValidateIdentity() {
 		t.Errorf("expected ValidateIdentity to fail for mismatched start time")
+	}
+}
+
+func TestStopNeverRemovesProjectDirectory(t *testing.T) {
+	t.Setenv("SECRETHARBOR_DIR", t.TempDir())
+
+	projDir := filepath.Join(t.TempDir(), "myproject")
+	if err := os.MkdirAll(projDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	envPath := filepath.Join(projDir, ".env")
+	if err := os.WriteFile(envPath, []byte("K=1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("sleep", "10")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = cmd.Process.Kill() }()
+
+	// Simulate the historical bug: SandboxDir accidentally equals the project dir.
+	sess, err := session.Register("claude", "sleep 10", projDir, cmd.Process.Pid, 0, projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.StopSession(sess); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(envPath); err != nil {
+		t.Fatalf("project directory must never be removed on stop: %v", err)
 	}
 }

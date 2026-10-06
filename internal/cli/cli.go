@@ -713,8 +713,11 @@ func RunAgent(progName string, args []string) error {
 		pgid = pid
 	}
 
+	// Only record a sandbox scratch directory when it is genuinely different from the
+	// project directory; path spelling differences (symlinks) must not mark the real
+	// project as disposable session state.
 	shadowDir := ""
-	if cmd.Dir != "" && cmd.Dir != cwd {
+	if cmd.Dir != "" && !sameDirectory(cmd.Dir, cwd) {
 		shadowDir = cmd.Dir
 	}
 
@@ -785,6 +788,12 @@ func RunStatus(progName string) error {
 			for _, f := range rec.Files {
 				secretFiles = append(secretFiles, f.OriginalPath)
 			}
+		}
+	}
+	if len(secretFiles) == 0 && cfg.IsGuardEnabled() {
+		// Shadow-workspace mode leaves no on-disk swap record; list detected secrets.
+		if detected, derr := secrets.DetectSecretFilesInDir(cwd, cfg.Exceptions.Allow, cfg.Exceptions.Deny); derr == nil {
+			secretFiles = detected
 		}
 	}
 	sessions, _ := session.List()
@@ -961,6 +970,16 @@ func RunStop(progName string, args []string) error {
 	fmt.Println("Temporary sandbox state cleaned up.")
 	fmt.Printf("\033[90mNote: '%s stop' terminates an agent session. SecretHarbor security policy remains active.\033[0m\n", progName)
 	return nil
+}
+
+// sameDirectory reports whether two paths refer to the same directory, resolving symlinks.
+func sameDirectory(a, b string) bool {
+	ca, errA := filepath.EvalSymlinks(a)
+	cb, errB := filepath.EvalSymlinks(b)
+	if errA != nil || errB != nil {
+		return filepath.Clean(a) == filepath.Clean(b)
+	}
+	return ca == cb
 }
 
 // isSandboxedAgent reports whether the current process is running inside a SecretHarbor sandbox.
@@ -1376,7 +1395,7 @@ func RunEnv(progName string, args []string) error {
 	switch action {
 	case "edit":
 		cwd, _ := os.Getwd()
-		absCwd, _ := filepath.Abs(cwd)
+		absCwd := secrets.CanonicalProjectPath(cwd)
 		swaps, _ := secrets.LoadActiveSwaps()
 		rec, isSwapped := swaps[absCwd]
 
@@ -1410,7 +1429,7 @@ func RunEnv(progName string, args []string) error {
 		}
 
 		if isSwapped && rec != nil && len(rec.Files) > 0 {
-			// Refresh in-tree synthetic fake file
+			// Refresh in-tree synthetic fake file (legacy in-place swap sessions)
 			realBytes, err := os.ReadFile(rec.Files[0].BackupPath)
 			if err == nil {
 				virtualized, err := secrets.VirtualizeEnvContent(bytes.NewReader(realBytes))
@@ -1427,6 +1446,9 @@ func RunEnv(progName string, args []string) error {
 			fmt.Printf("\033[32m✓ Real secrets updated and synthetic environment refreshed for active session\033[0m\n")
 		} else {
 			fmt.Printf("\033[32m✓ Saved %s\033[0m\n", targetFile)
+			if sess, serr := session.GetForProject(cwd); serr == nil && sess != nil {
+				fmt.Printf("\033[33mNote:\033[0m active session %s keeps its synthetic copy; restart the agent to pick up the new values.\n", sess.ID)
+			}
 		}
 		return nil
 

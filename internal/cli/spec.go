@@ -112,7 +112,7 @@ var CommandRegistry = map[string]*CommandDef{
 		Name:        "doctor",
 		Summary:     "Run adversarial security verification test suite",
 		Usage:       "doctor",
-		Description: "Executes a 14-vector adversarial attack suite verifying that direct file reads, interpreter reads, symlinks, path traversals, file copies, environment variables, privileged sockets, Docker socket access, container secret directories (/run/secrets), DOCKER_HOST leakage, and policy files cannot be exploited by the agent.",
+		Description: "Executes an 18-vector adversarial attack suite verifying that direct file reads, interpreter reads, symlinks, path traversals, file copies, renames, environment variables, privileged sockets, Docker socket access, container secret directories (/run/secrets), DOCKER_HOST leakage, inherited file descriptors, policy files, ptrace, core dumps, raw network egress, and filesystem escapes cannot be exploited by the agent.",
 		Examples: []string{
 			"shb doctor",
 		},
@@ -408,12 +408,12 @@ var CommandRegistry = map[string]*CommandDef{
 	},
 	"restore": {
 		Name:        "restore",
-		Summary:     "Restore swapped secret files to their original real values",
+		Summary:     "Restore real secret files from a legacy in-place swap session",
 		Usage:       "restore [path] [--all] [--orphans]",
-		Description: "Restores project secret files (.env) from the secure vault backup back to their original disk locations. Safely performs 3-way reconciliation so that newly added configuration keys and edited variables are preserved while real secrets are restored.",
+		Description: "Restores real secret files for legacy in-place swap sessions (pre-shadow-workspace versions) or after an interrupted session. Modern sessions use shadow workspaces on macOS and mount virtualization on Linux, which never modify real files, so no restore is required.",
 		Flags: []FlagDef{
-			{Name: "all", Shorthand: "a", Description: "Restore swapped secret files across all registered projects"},
-			{Name: "orphans", Shorthand: "o", Description: "Restore orphaned swaps left by crashed or terminated processes"},
+			{Name: "all", Shorthand: "a", Description: "Restore all registered legacy swap sessions"},
+			{Name: "orphans", Shorthand: "o", Description: "Restore orphaned legacy swaps left by crashed or terminated processes"},
 		},
 		Examples: []string{
 			"shb restore",
@@ -426,7 +426,7 @@ var CommandRegistry = map[string]*CommandDef{
 		Name:        "env",
 		Summary:     "Manage environment and live secret updates",
 		Usage:       "env [edit]",
-		Description: "Provides safe live editing of environment secrets. During active agent sessions, 'shb env edit' opens the real backup in $EDITOR and automatically refreshes the in-tree synthetic file for the active session without exposing secrets to the sandboxed agent.",
+		Description: "Safe live editing of environment secrets. Opens the real .env in $EDITOR (or the legacy vault backup for an active in-place swap session). A running agent session keeps its synthetic copy; restart the session to pick up new values.",
 		Examples: []string{
 			"shb env edit",
 		},

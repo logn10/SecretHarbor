@@ -384,8 +384,19 @@ func VirtualizeEnvContent(r io.Reader) (string, error) {
 	var out strings.Builder
 
 	for _, entry := range entries {
-		if entry.IsBlank || entry.IsComment || entry.Key == "" {
+		if entry.IsBlank || entry.IsComment {
 			out.WriteString(entry.RawText)
+			continue
+		}
+
+		if entry.Key == "" {
+			// Unparseable line (e.g. raw secret material without an assignment):
+			// never copy it verbatim into the synthetic file.
+			eol := entry.EOL
+			if eol == "" {
+				eol = "\n"
+			}
+			out.WriteString("# [REDACTED BY SECRETHARBOR]" + eol)
 			continue
 		}
 

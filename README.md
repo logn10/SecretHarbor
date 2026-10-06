@@ -65,11 +65,11 @@ SecretHarbor is built on a strict **Zero-Telemetry Principle**:
 
 ## Security Posture Reporting (`shb status`)
 
-SecretHarbor strictly distinguishes **configuration intent** from **actual active kernel enforcement** (Development Spec §25):
+SecretHarbor strictly distinguishes **configuration intent** from **actual active kernel enforcement**:
 * A valid `secretharbor.yaml` configuration alone does not constitute "STRONG" security.
 * `shb status` interrogates runtime kernel primitives, namespace availability, and process confinement boundaries to report the **true active posture**:
   - `Kernel Enforcement`: active / inactive
-  - `Filesystem Isolation`: strong (`fake` in-place virtualization) / limited / unconfined
+  - `Filesystem Isolation`: kernel-enforced (`fake` shadow virtualization) / not enforced / unconfined
   - `Network Isolation`: allow / restricted / deny
   - `Docker Capability`: approval-gated / disabled / allow
   - `Inherited FD Protection`: active (close-on-exec sanitized)
@@ -167,34 +167,32 @@ SecretHarbor terminates the unconfined process tree and relaunches it inside the
 
 ## Key Capabilities
 
-### 1. Transparent Secret Virtualization & Shadow Backups
+### 1. Transparent Secret Virtualization
 Agents often crash if `.env` is simply hidden or blocked with `EPERM`. SecretHarbor generates **format-preserving synthetic credentials**:
 * `STRIPE_SECRET_KEY` $\to$ `sk_test_secretharbor_fake_...` (valid checksum format)
 * `OPENAI_API_KEY` $\to$ `sk-proj-secretharbor-fake-...`
 * `ANTHROPIC_API_KEY` $\to$ `sk-ant-api03-secretharbor-fake-...`
-* `AWS_ACCESS_KEY_ID` $\to$ `AKIAIOSFODNN7SECRETH`
+* `AWS_ACCESS_KEY_ID` $\to$ `AKIAFAKEHARBOR...`
 * `DATABASE_URL` $\to$ `postgresql://secretharbor_user:fake_password@localhost:5432/fake_db?sslmode=disable`
-* `GITHUB_TOKEN` $\to$ `ghp_secretharborfake...`
+* `GITHUB_TOKEN` $\to$ `ghp_secretharbor_fake_...`
 
 #### Credential Coverage
 SecretHarbor automatically discovers, isolates, and virtualizes:
-- **Environment files:** `.env`, `.env.local`, `.env.production`, `.env.development`, `.env.test`, `.env.staging`
+- **Environment files:** `.env`, `.env.local`, `.env.development`, `.env.test`, `.env.staging` (`.env.production` and `secrets/**` are denied by default)
 - **Cloud tokens:** AWS (`~/.aws/credentials`), GCP (`~/.config/gcloud`), Azure (`~/.azure`)
 - **Keys & Certificates:** SSH private keys (`~/.ssh/id_*`), TLS private keys (`*.pem`, `*.key`)
 - **Database connection strings:** PostgreSQL, MySQL, Redis, MongoDB URIs
 - **Custom variables:** User-defined secret patterns via `secretharbor.yaml`
 
-#### Shadow Backups & Live 3-Way Reconciliation
-In default protection mode (`mode: fake`), SecretHarbor uses **In-Place Secret Swap & Auto-Inject**:
-1. **Shadow Backup:** Before the agent or command executes, SecretHarbor creates an encrypted snapshot of real secret files in `~/.secretharbor/vault/shadow_backups/` with strict mode `0600`.
-2. **Auto-Inject:** Keys and synthetic format-preserving values from `.env` are automatically extracted and merged into process environments (`cmd.Env`), guaranteeing `process.env.<KEY>` is always defined.
-3. **Zero Test Runner Errors:** Tools with built-in `.env` autoloaders like Bun (`bun test`), Node (`dotenv`), and Python (`pydantic-settings`) read synthetic fake files seamlessly with **zero flags and zero `PermissionDenied` errors**.
-4. **Live Editing in VS Code / Text Editors:** You or your AI agent can edit `.env` directly in VS Code, Cursor, or Vim while a session is active. Upon session exit (or `shb stop` / Ctrl-C), SecretHarbor performs a **3-way reconciliation**:
-   - Newly added configuration keys are automatically merged into your real `.env`.
-   - Edited non-secret variables are preserved with your updated values.
-   - If you intentionally replace a secret with a new real token, SecretHarbor adopts your new secret into the restored file.
-   - Untouched secrets are restored byte-for-byte from the shadow backup.
-5. **Fail-Safe Crash Recovery:** If a process is forcefully terminated (`kill -9`) or the host shuts down unexpectedly, real files are automatically restored on the next SecretHarbor command (`shb status`, `shb run`, `shb doctor`), or on demand via `shb restore`.
+#### Shadow Workspace Virtualization (macOS) & Mount Virtualization (Linux)
+In default protection mode (`mode: fake`), **your real secret files are never modified**. The agent runs inside a per-session virtualized view:
+
+1. **Shadow Workspace (macOS):** Before launch, SecretHarbor creates an ephemeral mirror of the project under the system temp directory. Non-secret files are hard-linked (so agent edits flow to the real project), secret files are replaced with format-preserving synthetic fakes, and control-plane files (`secretharbor.yaml`) are exposed read-only. The real `.env` on disk is untouched.
+2. **Mount Virtualization (Linux):** Inside the agent's mount namespace, synthetic fakes are bind-mounted over the real secret paths. The host files are never changed, and only sandboxed processes see fakes.
+3. **Auto-Inject:** Synthetic values from `.env` are also merged into the agent's process environment, so `process.env.<KEY>` is always defined.
+4. **Humans and test runners keep real values:** Your editor, your shell, and `bun test` / `pytest` / `npm test` run outside the sandbox see the **real** `.env`, even while an agent session is active. Agents and their child processes see fakes.
+5. **No crash-recovery needed:** Because the real files are never swapped, a `kill -9`, crash, or reboot cannot leave fakes on disk. Stale shadow workspaces are reclaimed automatically; `shb restore` remains available for legacy in-place swap sessions.
+6. **Live editing:** Edit the real `.env` in VS Code, Cursor, or Vim at any time; run `shb env edit` to open the real file. A running agent session keeps its synthetic copy — restart the session to pick up new values. Agent-created and agent-edited non-secret files are synced back when the session ends.
 
 ### 2. Outbound Network Policy: Allowed by Default with Explicit Deny
 SecretHarbor permits all outbound network calls by default, giving agent workflows native network speed without local proxy overhead:
@@ -236,7 +234,7 @@ Antigravity (PID 58342)
 * **Instant `Ctrl+C` Termination:** Pressing `Ctrl+C` once sends whole-tree `SIGTERM`/`SIGKILL` signals to all child helpers (GPU, Renderer, crashpad, Node workers), exiting cleanly with status 130 without leaving orphaned processes.
 
 ### 5. Adversarial Security Doctor
-Run SecretHarbor's built-in 14-vector live attack suite:
+Run SecretHarbor's built-in 18-vector live attack suite:
 ```bash
 shb doctor
 ```
@@ -270,10 +268,10 @@ All self-updates and release artifacts are cryptographically signed:
 | `shb config` | `shb config [show\|get\|set\|check\|diff]` | Read-only effective policy viewer and updater |
 | `shb policy` | `shb policy explain <resource>` | Explain why a resource or network domain is allowed, virtualized, or denied |
 | `shb secret` | `shb secret [status\|test\|set\|delete]` | Manage local encrypted vault credentials |
-| `shb env` | `shb env [edit]` | Safe live editing of environment secrets in $EDITOR |
-| `shb restore` | `shb restore [path\|--all\|--orphans]` | Restore real secret files from secure vault backup |
+| `shb env` | `shb env [edit]` | Edit the real `.env` in $EDITOR (agents keep synthetic values) |
+| `shb restore` | `shb restore [path\|--all\|--orphans]` | Restore legacy in-place swap sessions (recovery only) |
 | `shb trust` | `shb trust [list\|add\|remove]` | Manage trusted processes |
-| `shb doctor` | `shb doctor` | Execute 14-vector live adversarial attack suite |
+| `shb doctor` | `shb doctor` | Execute 18-vector live adversarial attack suite |
 | `shb guard` | `shb guard [on\|off]` | Toggle protection boundary for the current project |
 | `shb update` | `shb update [--check] [--version <v>] [--dry-run]` | Check for and install verified updates with Ed25519 signature checks |
 | `shb version` | `shb version` | Show version, platform, kernel, and sandbox driver details |

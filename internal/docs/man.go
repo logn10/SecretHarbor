@@ -72,7 +72,7 @@ func GenerateMainManPage() string {
 	b.WriteString("Explain why .env is faked or denied\n")
 	b.WriteString(".TP\n")
 	b.WriteString("\\fBshb doctor\\fR\n")
-	b.WriteString("Run live 14-vector adversarial attack tests\n")
+	b.WriteString("Run live 18-vector adversarial attack tests\n")
 	b.WriteString(".SH FILES\n")
 	b.WriteString(".TP\n")
 	b.WriteString("\\fIsecretharbor.yaml\\fR\n")

@@ -1,17 +1,17 @@
 .TH SHB-RESTORE 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
 .SH NAME
-shb-restore \- Restore swapped secret files to their original real values
+shb-restore \- Restore real secret files from a legacy in-place swap session
 .SH SYNOPSIS
 \fBshb restore [path] [--all] [--orphans]\fR
 .SH DESCRIPTION
-Restores project secret files (.env) from the secure vault backup back to their original disk locations. Safely performs 3-way reconciliation so that newly added configuration keys and edited variables are preserved while real secrets are restored.
+Restores real secret files for legacy in-place swap sessions (pre-shadow-workspace versions) or after an interrupted session. Modern sessions use shadow workspaces on macOS and mount virtualization on Linux, which never modify real files, so no restore is required.
 .SH OPTIONS
 .TP
 \fB-a\fR, \fB--all\fR
-Restore swapped secret files across all registered projects
+Restore all registered legacy swap sessions
 .TP
 \fB-o\fR, \fB--orphans\fR
-Restore orphaned swaps left by crashed or terminated processes
+Restore orphaned legacy swaps left by crashed or terminated processes
 .SH EXAMPLES
 .TP
 $ \fBshb restore\fR

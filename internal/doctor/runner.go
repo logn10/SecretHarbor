@@ -182,11 +182,11 @@ func (d *DoctorSuite) RunAll() []Result {
 }
 
 func (d *DoctorSuite) runCommand(sb sandbox.Sandbox, dir, command string, args []string, extraEnv []string) (string, int, error) {
+	// The sandbox launch owns the working directory (shadow workspace in fake mode).
 	cmd, err := sb.Launch(command, args, extraEnv)
 	if err != nil {
 		return "", -1, err
 	}
-	cmd.Dir = dir
 
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
@@ -338,23 +338,34 @@ func (d *DoctorSuite) testCopyBypass(sb sandbox.Sandbox, dir string) Result {
 }
 
 func (d *DoctorSuite) testRenameBypass(sb sandbox.Sandbox, dir string) Result {
-	script := "mv .env renamed.env 2>&1"
-	output, exitCode, _ := d.runCommand(sb, dir, "/bin/sh", []string{"-c", script}, nil)
-	if exitCode == 0 && !strings.Contains(output, "denied") && !strings.Contains(output, "permitted") {
-		// Restore if modified
-		_ = os.Rename(filepath.Join(dir, "renamed.env"), filepath.Join(dir, ".env"))
+	// Renaming the synthetic file inside the sandbox is harmless; the real secret file
+	// must remain untouched and no canary content may leak through the renamed file.
+	script := "mv .env renamed.env 2>/dev/null; cat renamed.env 2>&1"
+	output, _, _ := d.runCommand(sb, dir, "/bin/sh", []string{"-c", script}, nil)
+	if d.containsAnyCanary(output) {
 		return Result{
 			Category: "Filesystem",
 			Name:     "Rename Bypass (mv .env)",
 			Status:   StatusFail,
-			Details:  "Agent successfully renamed protected secret file",
+			Details:  "Renamed file exposed real secret content",
 		}
 	}
+
+	realEnv, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if err != nil || !strings.Contains(string(realEnv), CanaryRealSecret) {
+		return Result{
+			Category: "Filesystem",
+			Name:     "Rename Bypass (mv .env)",
+			Status:   StatusFail,
+			Details:  "Real secret file was modified or removed by the sandboxed agent",
+		}
+	}
+
 	return Result{
 		Category: "Filesystem",
 		Name:     "Rename Bypass (mv .env)",
 		Status:   StatusPass,
-		Details:  "File rename blocked by OS security policy",
+		Details:  "Real secret file untouched; synthetic file rename is isolated",
 	}
 }
 

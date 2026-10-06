@@ -225,7 +225,7 @@ func TestUpdateSwapPID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadActiveSwaps failed: %v", err)
 	}
-	absProj, _ := filepath.Abs(tmpDir)
+	absProj := CanonicalProjectPath(tmpDir)
 	updatedRec := swaps[absProj]
 	if updatedRec == nil || updatedRec.PID != 2222 {
 		t.Fatalf("expected updated PID 2222, got %v", updatedRec)
@@ -310,9 +310,26 @@ func TestSwapSymlinkAttackPrevention(t *testing.T) {
 
 	// Run SwapInPlace
 	rec, err := SwapInPlace(projDir, nil, nil, os.Getpid())
-	// Either error or empty files because symlink was rejected
-	if err == nil && rec != nil && len(rec.Files) > 0 {
-		t.Fatalf("SwapInPlace must NOT swap symlink pointing outside project!")
+	if err != nil {
+		t.Fatalf("SwapInPlace failed: %v", err)
+	}
+	if rec == nil || len(rec.Files) != 1 {
+		t.Fatalf("expected external symlink to be replaced by a synthetic file, got %+v", rec)
+	}
+	if rec.Files[0].LinkTarget != victimFile {
+		t.Errorf("expected recorded link target %s, got %s", victimFile, rec.Files[0].LinkTarget)
+	}
+
+	// The in-project path must now be a synthetic regular file.
+	fakeData, err := os.ReadFile(symlinkPath)
+	if err != nil {
+		t.Fatalf("expected synthetic file at .env: %v", err)
+	}
+	if strings.Contains(string(fakeData), victimContent) {
+		t.Fatalf("synthetic file leaked the external secret")
+	}
+	if fi, err := os.Lstat(symlinkPath); err != nil || fi.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("expected .env to be a regular file during the session")
 	}
 
 	// Verify victim file is completely untouched
@@ -322,6 +339,20 @@ func TestSwapSymlinkAttackPrevention(t *testing.T) {
 	}
 	if string(data) != victimContent {
 		t.Fatalf("CRITICAL SECURITY FAILURE: external victim file was modified! Got %s", string(data))
+	}
+
+	// Restore must recreate the symlink and leave the victim untouched.
+	if err := RestoreSwap(projDir); err != nil {
+		t.Fatalf("RestoreSwap failed: %v", err)
+	}
+	if fi, err := os.Lstat(symlinkPath); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("expected .env symlink to be restored")
+	}
+	if target, _ := os.Readlink(symlinkPath); target != victimFile {
+		t.Errorf("expected symlink target %s, got %s", victimFile, target)
+	}
+	if data, _ := os.ReadFile(victimFile); string(data) != victimContent {
+		t.Fatalf("external victim file was modified during restore")
 	}
 }
 
@@ -552,5 +583,97 @@ func TestSwapSymlinkHandling(t *testing.T) {
 	}
 	if data, _ := os.ReadFile(inFile); string(data) != "INPROJ-REAL-SECRET" {
 		t.Errorf("in-project secret was not restored: %q", string(data))
+	}
+}
+
+func TestShadowWorkspaceVirtualization(t *testing.T) {
+	projDir := t.TempDir()
+	shbDir := t.TempDir()
+	t.Setenv("SECRETHARBOR_DIR", shbDir)
+
+	envPath := filepath.Join(projDir, ".env")
+	if err := os.WriteFile(envPath, []byte("OPENAI_API_KEY=sk-real-shadow\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	appPath := filepath.Join(projDir, "app.js")
+	if err := os.WriteFile(appPath, []byte("console.log(1)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	protectedPath := filepath.Join(projDir, "secretharbor.yaml")
+	if err := os.WriteFile(protectedPath, []byte("version: 1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := DetectSecretFilesInDir(projDir, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ve, err := PrepareVirtualization(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ve.Cleanup()
+	ve.ProtectedPaths = []string{protectedPath}
+
+	ws, err := ve.CreateShadowWorkspace(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(ws)
+
+	// Real secret file must be untouched.
+	if data, _ := os.ReadFile(envPath); string(data) != "OPENAI_API_KEY=sk-real-shadow\n" {
+		t.Fatalf("real .env was modified: %q", string(data))
+	}
+	// Shadow .env must be synthetic.
+	shadowEnv, err := os.ReadFile(filepath.Join(ws, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(shadowEnv), "sk-real-shadow") {
+		t.Fatal("shadow .env leaked the real secret")
+	}
+	// Non-secret files are hard-linked.
+	realInfo, _ := os.Stat(appPath)
+	shadowInfo, _ := os.Stat(filepath.Join(ws, "app.js"))
+	if realInfo == nil || shadowInfo == nil || !os.SameFile(realInfo, shadowInfo) {
+		t.Fatal("expected non-secret file to be hard-linked into the shadow")
+	}
+	// Protected file is a read-only copy, not a link.
+	pInfo, _ := os.Stat(filepath.Join(ws, "secretharbor.yaml"))
+	if pInfo == nil || pInfo.Mode().Perm()&0200 != 0 {
+		t.Fatalf("expected protected file to be read-only, mode=%v", pInfo.Mode())
+	}
+	if os.SameFile(realInfo, pInfo) {
+		t.Fatal("protected file must not be hard-linked")
+	}
+
+	// Agent creates a new file: it must sync back.
+	if err := os.WriteFile(filepath.Join(ws, "new.txt"), []byte("created\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Agent replaces a hard-linked file via rename: content must sync back.
+	tmp := filepath.Join(ws, ".tmp-app")
+	if err := os.WriteFile(tmp, []byte("console.log(2)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, filepath.Join(ws, "app.js")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ve.SyncBack(projDir); err != nil {
+		t.Fatalf("SyncBack failed: %v", err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(projDir, "new.txt")); string(data) != "created\n" {
+		t.Fatalf("agent-created file was not synced back: %q", string(data))
+	}
+	if data, _ := os.ReadFile(appPath); string(data) != "console.log(2)\n" {
+		t.Fatalf("rename-style edit was not synced back: %q", string(data))
+	}
+	if data, _ := os.ReadFile(envPath); string(data) != "OPENAI_API_KEY=sk-real-shadow\n" {
+		t.Fatalf("real .env was modified by SyncBack: %q", string(data))
+	}
+	if data, _ := os.ReadFile(protectedPath); string(data) != "version: 1\n" {
+		t.Fatalf("protected file was modified: %q", string(data))
 	}
 }

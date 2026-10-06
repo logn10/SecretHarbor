@@ -226,12 +226,11 @@ func List() ([]*Session, error) {
 			continue
 		}
 
-		// Prune dead or PID-reused sessions (BUG-018)
+		// Prune dead or PID-reused sessions (BUG-018). Scratch directories are
+		// cleaned up by the owning sandbox (or the age-based cleaner), never here,
+		// so a live supervisor can still sync agent-created files back first.
 		if !IsProcessAlive(sess.PID) || !sess.ValidateIdentity() {
 			_ = os.Remove(filePath)
-			if sess.SandboxDir != "" {
-				_ = os.RemoveAll(sess.SandboxDir)
-			}
 			continue
 		}
 
@@ -324,12 +323,8 @@ func (s *Session) Stop() error {
 	// Terminate the entire process tree (all helper/worker processes and root)
 	KillProcessTree(s.PID)
 
-	// Clean up temporary shadow workspace or scratch directories
-	if s.SandboxDir != "" {
-		_ = os.RemoveAll(s.SandboxDir)
-	}
-
-	// Remove session record
+	// Remove session record. The sandbox supervisor owns scratch-directory cleanup
+	// so it can sync agent-created files back before removing the workspace.
 	_ = Unregister(s.ID)
 	return nil
 }

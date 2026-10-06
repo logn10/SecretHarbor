@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/secretharbor/secretharbor/internal/policy"
+	"github.com/secretharbor/secretharbor/internal/secrets"
 )
 
 // CompiledPlan represents the immutable OS-level enforcement specification.
@@ -96,6 +97,11 @@ func Compile(cfg *policy.Config, configPath string, projectDir string) (*Compile
 	if err == nil {
 		projectDir = absProjectDir
 	}
+	// Resolve a symlinked project root so secret detection and sandbox rules target
+	// the real directory instead of leaking through an unswapped alias (BUG-010).
+	if resolved, rerr := filepath.EvalSymlinks(projectDir); rerr == nil && resolved != "" {
+		projectDir = filepath.Clean(resolved)
+	}
 
 	homeDir, err := os.UserHomeDir()
 	if err != nil || homeDir == "" {
@@ -176,13 +182,21 @@ func Compile(cfg *policy.Config, configPath string, projectDir string) (*Compile
 		}
 	}
 
-	// 2. Compile Filesystem Allowed Paths
+	// 2. Compile Filesystem Allowed Paths (glob patterns are expanded to concrete files)
 	for _, a := range cfg.Exceptions.Allow {
+		if hasGlobMeta(a) && !strings.HasPrefix(a, "~/") {
+			plan.Filesystem.AllowedPaths = append(plan.Filesystem.AllowedPaths, secrets.FindMatchingFiles(projectDir, []string{a})...)
+			continue
+		}
 		plan.Filesystem.AllowedPaths = append(plan.Filesystem.AllowedPaths, resolvePath(a, projectDir, homeDir))
 	}
 
-	// 3. Compile Filesystem Denied Paths
+	// 3. Compile Filesystem Denied Paths (glob patterns are expanded to concrete files)
 	for _, d := range cfg.Exceptions.Deny {
+		if hasGlobMeta(d) && !strings.HasPrefix(d, "~/") {
+			plan.Filesystem.DeniedPaths = append(plan.Filesystem.DeniedPaths, secrets.FindMatchingFiles(projectDir, []string{d})...)
+			continue
+		}
 		plan.Filesystem.DeniedPaths = append(plan.Filesystem.DeniedPaths, resolvePath(d, projectDir, homeDir))
 	}
 	plan.Filesystem.DeniedPaths = append(plan.Filesystem.DeniedPaths,
@@ -256,6 +270,10 @@ func Compile(cfg *policy.Config, configPath string, projectDir string) (*Compile
 
 func isPathRule(secret string) bool {
 	return strings.Contains(secret, "/") || strings.Contains(secret, ".")
+}
+
+func hasGlobMeta(pattern string) bool {
+	return strings.ContainsAny(pattern, "*?[")
 }
 
 func appendUniqueString(list []string, value string) []string {

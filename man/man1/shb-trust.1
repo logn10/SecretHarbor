@@ -1,14 +1,14 @@
 .TH SHB-TRUST 1 "October 2026" "SecretHarbor 0.4.0-prod" "SecretHarbor Manual"
 .SH NAME
-shb-trust \- Manage explicitly trusted agents, tools, and processes
+shb-trust \- Manage the advisory trusted process list (not yet enforced)
 .SH SYNOPSIS
 \fBshb trust <list|add|remove> [name]\fR
 .SH DESCRIPTION
-Configure authorized tools, MCP servers, and processes that have human-level trust boundaries.
+Maintains an advisory list of trusted tools, MCP servers, and processes. Entries are metadata only and do not currently change sandbox enforcement.
 .SH SUBCOMMANDS
 .TP
 \fBadd\fR
-Authorizes a specific tool, executable, or MCP server to run with trusted boundaries.
+Records a tool, executable, or MCP server as trusted in the advisory list (not yet enforced).
 .TP
 \fBlist\fR
 Lists all processes and tools currently recognized as trusted in the project policy.
